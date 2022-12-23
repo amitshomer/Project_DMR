@@ -1,0 +1,35 @@
+Subnet1(
+  (deformNet1): DeformNet(
+    (conv_layer1): Conv_layer(
+      (conv): Conv1d(1027, 1027, kernel_size=(1,), stride=(1,))
+      (bn): BatchNorm1d(1027, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (conv_layer2): Conv_layer(
+      (conv): Conv1d(1027, 513, kernel_size=(1,), stride=(1,))
+      (bn): BatchNorm1d(513, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (conv_layer3): Conv_layer(
+      (conv): Conv1d(513, 256, kernel_size=(1,), stride=(1,))
+      (bn): BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (conv4): Conv1d(256, 3, kernel_size=(1,), stride=(1,))
+    (th): Tanh()
+  )
+  (error_estimator): Error_Estimator(
+    (conv_layer1): Conv_layer(
+      (conv): Conv1d(1027, 1027, kernel_size=(1,), stride=(1,))
+      (bn): BatchNorm1d(1027, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (conv_layer2): Conv_layer(
+      (conv): Conv1d(1027, 513, kernel_size=(1,), stride=(1,))
+      (bn): BatchNorm1d(513, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (conv_layer3): Conv_layer(
+      (conv): Conv1d(513, 256, kernel_size=(1,), stride=(1,))
+      (bn): BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (conv4): Conv1d(256, 1, kernel_size=(1,), stride=(1,))
+    (sig): Sigmoid()
+  )
+)
+json_stats: {"train_l2_loss": 0.0013612959226407934, "train_cds_stage2": 0.010709994565283435, "val_l2_loss": 0.0017121890212588927, "val_cds_stage2": 0.008354400774758113, "epoch": 0, "lr": 0.001, "chair": 0.008354400774758113}

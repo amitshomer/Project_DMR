@@ -1,0 +1,40 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Pretrain_SA",
+            "type": "python",
+            "request": "launch",
+            "program": "pretrain_SA.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "train_subnet1_SA",
+            "type": "python",
+            "request": "launch",
+            "program": "train_subnet1_SA.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "train_subnet2_SA",
+            "type": "python",
+            "request": "launch",
+            "program": "train_subnet2_SA.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}
