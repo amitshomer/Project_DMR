@@ -38,7 +38,7 @@ parser.add_argument('--num_vertices', type=int, default=2562, help='number of ve
 parser.add_argument('--folder_path', type=str, default='./log/subnet1/', help='model path from the pretrained model')
 parser.add_argument('--tau', type=float, default=0.1)
 
-parser.add_argument('--device', type=int, default=1, help='GPU device')
+parser.add_argument('--device', type=int, default=2, help='GPU device')
 
 # parser.add_argument('--manualSeed', type=int, default=6185)
 args = parser.parse_args()
@@ -76,7 +76,7 @@ vertices_sphere = np.array(mesh['v'])
 vertices_sphere = (torch.cuda.FloatTensor(vertices_sphere)).transpose(0, 1).contiguous()
 vertices_sphere = vertices_sphere.contiguous().unsqueeze(0).to(cuda)
 edge_cuda = get_edges(faces) # TODO- maybe edit this functuion 
-parameters = smoothness_loss_parameters(faces) # TODO - check what this thing doing 
+#parameters = smoothness_loss_parameters(faces) # TODO - check what this thing doing 
 
 ## Load Models ##
 # Img encoder 

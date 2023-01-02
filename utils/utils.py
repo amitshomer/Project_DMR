@@ -53,7 +53,7 @@ def get_max(errors, index, fn=5120):
     return max_errors
 
 
-def get_edges(faces):
+def get_edges(faces): # TODO Sapir
     edge = []
     for i, j in enumerate(faces):
         edge.append(j[:2])
@@ -67,23 +67,23 @@ def get_edges(faces):
     return edge_cuda
 
 
-def get_boundary(faces):
-    vertices_number = faces.max().item() + 1
+def get_boundary(faces): # TODO Sapir
+    vertices_number = faces.max().item() + 1 # Vertices amount
 
     triangles_new = faces.cpu().data.numpy()
-    triangles_new = triangles_new[triangles_new.sum(1).nonzero()]
+    triangles_new = triangles_new[triangles_new.sum(1).nonzero()] # TODO not sure? 
 
-    edges = np.concatenate((triangles_new[:, :2], triangles_new[:, [0, 2]], triangles_new[:, 1:]), 0)
+    edges = np.concatenate((triangles_new[:, :2], triangles_new[:, [0, 2]], triangles_new[:, 1:]), 0) # array of edges
     edges.sort(1)
-    edges_unrolled = edges[:, 0] * vertices_number + edges[:, 1]  # edges extended to 1d
-
-    all_index = np.arange(0, edges_unrolled.shape[0])
-    unique_index = np.unique(edges_unrolled, return_index=True)[1]
-    repeated_index = np.array(list(set(all_index).difference(set(unique_index))))
+    edges_unrolled = edges[:, 0] * vertices_number + edges[:, 1]  # edges extended to 1d, represent edges as scaler
+    # Find unique edges
+    all_index = np.arange(0, edges_unrolled.shape[0]) # 14988 edges with replications 
+    unique_index = np.unique(edges_unrolled, return_index=True)[1] # only 7543 unique edges 
+    repeated_index = np.array(list(set(all_index).difference(set(unique_index)))) 
     unique_value = edges_unrolled[unique_index]
     repeated_value = edges_unrolled[repeated_index]
-
-    boundary_value = np.array(list(set(unique_value).difference(set(repeated_value))))
+    # 
+    boundary_value = np.array(list(set(unique_value).difference(set(repeated_value)))) # set - sequences of unique elements, difference - find the redunent for two sets 
     boundary_edge1 = np.array(np.floor(boundary_value / vertices_number))
     boundary_edge2 = np.array(boundary_value % vertices_number)
     boundary_edge = np.stack((boundary_edge1, boundary_edge2), 1)
@@ -102,7 +102,7 @@ def get_boundary(faces):
     return selected_pair, boundary_point, boundary_edge
 
 
-def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'):
+def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): # TODO Sapir
 
     if len(faces_cuda.size())==2:
         faces_points = pointsRec.index_select(1, faces_cuda.contiguous().view(-1)).contiguous().\
@@ -116,23 +116,23 @@ def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'):
     else:
         faces_points = None
 
-    faces_points_np = faces_points.cpu().data.numpy()
-    a = faces_points_np[:, :, 0]
-    b = faces_points_np[:, :, 1]
-    c = faces_points_np[:, :, 2]
+    faces_points_np = faces_points.cpu().data.numpy() # (24, 5120, 3, 3)
+    a = faces_points_np[:, :, 0] # (24, 5120, 3)
+    b = faces_points_np[:, :, 1] # (24, 5120, 3)
+    c = faces_points_np[:, :, 2] # (24, 5120, 3)
 
-    cross = np.cross(b - a, c - a)
-    area = np.sqrt(cross[:, :, 0] ** 2 + cross[:, :, 1] ** 2 + cross[:, :, 2] ** 2)
-    area_sum = np.sum(area, axis=1)
-    area_cum = np.cumsum(area, axis=1)
-    faces_pick = area_sum[:, np.newaxis] * np.random.random(sampled_number)[np.newaxis, :]  # 32*7500
+    cross = np.cross(b - a, c - a) # (24, 5120, 3)
+    area = np.sqrt(cross[:, :, 0] ** 2 + cross[:, :, 1] ** 2 + cross[:, :, 2] ** 2) # (24, 5120)
+    area_sum = np.sum(area, axis=1) # (24,)
+    area_cum = np.cumsum(area, axis=1) # (24, 5120)
+    faces_pick = area_sum[:, np.newaxis] * np.random.random(sampled_number)[np.newaxis, :]  # 32*7500. 10000 samples per image - (24,10000) TODO: why 32*7500?
 
     faces_index = []
-    for i in range(faces_pick.shape[0]):
+    for i in range(faces_pick.shape[0]): # for each image in the batch, search the indice to add the samples insize the cumsum 
         faces_index.append(np.searchsorted(area_cum[i], faces_pick[i]))
 
-    faces_index = np.array(faces_index)  # 32*7500 the index of faces to be sampled
-    faces_index = np.clip(faces_index,0,area_cum.shape[1]-1)
+    faces_index = np.array(faces_index)  # 32*7500 TODO: why 32*7500?. 24*10000
+    faces_index = np.clip(faces_index,0,area_cum.shape[1]-1) 
     faces_index_tensor = (torch.from_numpy(faces_index).cuda()).type(torch.cuda.LongTensor).to(device)
     faces_index_tensor_sort = faces_index_tensor.sort(1)[0]
 
@@ -166,7 +166,7 @@ def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'):
     return samples, faces_index_tensor_sort
 
 
-def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined):
+def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined): # TODO Sapir
     selected_pair_all = []
     selected_pair_all_len = []
     boundary_points_all = []
@@ -206,7 +206,7 @@ def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined):
     return pointsRec_refined_boundary, selected_pair_all, selected_pair_all_len
 
 
-def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, device='cuda:0'):
+def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, device='cuda:0'): # TODO Sapir
     error = torch.pow(error, 2)
     if not pool == 'sum':
         tau = tau / 10.0

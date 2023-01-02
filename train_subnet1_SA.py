@@ -154,23 +154,23 @@ for epoch in range(args.epoch):
 
     for i, data in enumerate(dataloader, 0):
         optimizer.zero_grad()
-        img, points, normals, name, cat = data
+        img, points, normals, name, cat = data # img, vertices_ref, faces_ref, _ , _ 
         img, normals, points = img.cuda(), normals.cuda(), points.cuda()
-        choice = np.random.choice(points.size(1), args.num_vertices, replace=False) #TOOD - chagne take asis
-        points_choice = points[:, choice, :].contiguous() #TOOD - chagne take asis
+        choice = np.random.choice(points.size(1), args.num_vertices, replace=False) # TODO chagne take asis
+        points_choice = points[:, choice, :].contiguous() # TODO - chagne take asis
         vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
-                                                        vertices_sphere.size(2)).contiguous())
-        # Encoder Img
+                                                        vertices_sphere.size(2)).contiguous()) # Shepre 
+        # Encoder Img - Shape Fearures X 
         feature_img = encoder(img)
 
-        #Subnet1
+        # Subnet1 - Mesh Deform (vertices' offset) & Error Estimation
         pointsRec, pointsRec_samples, out_error_estimator, random_choice,_ = subnet1(args= args, img_featrue=feature_img, points=vertices_input, faces_cuda=faces_cuda, num_points= args.num_points, num_samples= args.num_samples, prune=False)
             
         ## losses ##
-        # Chamfer distnace 
+        # Chamfer distnace - ref vertices to predicted pertices
         dist1, dist2, _, idx2 = distChamfer(points_choice, pointsRec)
         CD_loss = torch.mean(dist1) + torch.mean(dist2)
-        # Chamfer distnace 2  
+        # Chamfer distnace - ref vertices to sampled faces of predicted vertices
         dist1_samples, dist2_samples, _, _ = distChamfer(points, pointsRec_samples.detach())
         CDs_loss = torch.mean(dist1_samples) + torch.mean(dist2_samples)
         # l2 loss 
