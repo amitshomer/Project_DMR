@@ -76,7 +76,7 @@ vertices_sphere = np.array(mesh['v'])
 vertices_sphere = (torch.cuda.FloatTensor(vertices_sphere)).transpose(0, 1).contiguous()
 vertices_sphere = vertices_sphere.contiguous().unsqueeze(0).to(cuda)
 edge_cuda = get_edges(faces) # TODO- maybe edit this functuion 
-#parameters = smoothness_loss_parameters(faces) # TODO - check what this thing doing 
+parameters = smoothness_loss_parameters(faces) # TODO - check what this thing doing 
 
 ## Load Models ##
 # Img encoder 

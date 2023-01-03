@@ -2,17 +2,17 @@ import torch
 import numpy as np
 
 
-def normalize(input, p=2, dim=1, eps=1e-12):
+def normalize(input, p=2, dim=1, eps=1e-12): # TODO Sapir
     return input / input.norm(p, dim).clamp(min=eps).unsqueeze(dim).expand_as(input)
 
-
-def calculate_l2_loss(x, y):
+ 
+def calculate_l2_loss(x, y): # TODO Sapir
     assert x.size() == y.size()
     ret = torch.mean(torch.pow((x - y), 2))
     return ret
 
 
-def get_edge_loss(vertices,faces):
+def get_edge_loss(vertices,faces): # TODO Sapir
     # bs*2562*3 bs*5120*3
     edges = torch.cat((faces[:,:,:2],faces[:,:,[0,2]],faces[:,:,1:]),1) # bs * (3*5120) *2
     edges_vertices = vertices.index_select(1,edges.view(-1)).\
@@ -26,7 +26,7 @@ def get_edge_loss(vertices,faces):
     return edge_loss
 
 
-def get_edge_loss_stage1(vertices,edge):
+def get_edge_loss_stage1(vertices,edge): # TODO Sapir
     # vertices bs*points_number*3 edge edge_number*2
     vertices_edge = vertices.index_select(1,edge.view(-1)).\
         view(vertices.size(0),edge.size(0),edge.size(1),vertices.size(2))
@@ -36,7 +36,7 @@ def get_edge_loss_stage1(vertices,edge):
     return edge_loss
 
 
-def get_normal_loss(vertices, faces, gt_normals, idx2):
+def get_normal_loss(vertices, faces, gt_normals, idx2): # TODO Sapir
     idx2 = idx2.type(torch.cuda.LongTensor).detach()
     edges = torch.cat((faces[:,:,:2],faces[:,:,[0,2]],faces[:,:,1:]),1)
     edges_vertices = vertices.index_select(1,edges.view(-1)).\
@@ -61,7 +61,7 @@ def get_normal_loss(vertices, faces, gt_normals, idx2):
     return normal_loss
 
 
-def smoothness_loss_parameters(faces):
+def smoothness_loss_parameters(faces): # TODO Sapir
     # faces faces_number*3(array)
     print('calculating the smoothness loss parameters, gonna take a few moments')
     if hasattr(faces, 'get'):
@@ -93,7 +93,7 @@ def smoothness_loss_parameters(faces):
     return v0s, v1s, v2s, v3s
 
 
-def get_smoothness_loss_stage1(vertices, parameters, eps=1e-6):
+def get_smoothness_loss_stage1(vertices, parameters, eps=1e-6): # TODO Sapir
     # make v0s, v1s, v2s, v3s
     # vertices (bs*num_points*3)
     v0s, v1s, v2s, v3s = parameters
@@ -145,7 +145,7 @@ def get_smoothness_loss_stage1(vertices, parameters, eps=1e-6):
     return loss
 
 
-def get_smoothness_loss(vertices, parameters,faces_bn,eps=1e-6):
+def get_smoothness_loss(vertices, parameters,faces_bn,eps=1e-6): # TODO Sapir–
     # make v0s, v1s, v2s, v3s
     # vertices (bs*num_points*3)
     v0s, v1s, v2s, v3s = parameters

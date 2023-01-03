@@ -35,6 +35,14 @@
             "program": "train_subnet2_SA.py",
             "console": "integratedTerminal",
             "justMyCode": true
+        },
+        {
+            "name": "train_refiment_SA",
+            "type": "python",
+            "request": "launch",
+            "program": "train_refiment_SA.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
         }
     ]
 }

@@ -7,7 +7,7 @@ from scipy.sparse import coo_matrix
 
 
 # initialize the weighs of the network for Convolutional layers and batchnorm layers
-class AverageValueMeter(object):
+class AverageValueMeter(object): # TODO Sapir
     """Computes and stores the average and current value"""
     def __init__(self):
         self.reset()
@@ -34,7 +34,7 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 
-def get_max(errors, index, fn=5120):
+def get_max(errors, index, fn=5120): # TODO Sapir
     batch_size = errors.shape[0]
     number = errors.shape[1]
     b = torch.stack([torch.bincount(x,minlength=fn).cumsum(0) for x in index])
@@ -53,7 +53,7 @@ def get_max(errors, index, fn=5120):
     return max_errors
 
 
-def get_edges(faces): # TODO Sapir
+def get_edges(faces):
     edge = []
     for i, j in enumerate(faces):
         edge.append(j[:2])
@@ -67,7 +67,7 @@ def get_edges(faces): # TODO Sapir
     return edge_cuda
 
 
-def get_boundary(faces): # TODO Sapir
+def get_boundary(faces):
     vertices_number = faces.max().item() + 1 # Vertices amount
 
     triangles_new = faces.cpu().data.numpy()
@@ -166,7 +166,7 @@ def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): # TOD
     return samples, faces_index_tensor_sort
 
 
-def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined): # TODO Sapir
+def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
     selected_pair_all = []
     selected_pair_all_len = []
     boundary_points_all = []
@@ -190,15 +190,15 @@ def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined): # TODO Sapir
         if len(boundary_points_all[bn]) < max_len2:
             len_cat = max_len2 - len(boundary_points_all[bn])
             if len(boundary_points_all[bn]) > 0:
-                tensor_cat = torch.Tensor(len_cat).fill_(boundary_points_all[bn][0]).type_as(boundary_points_all[bn])
+                tensor_cat = torch.Tensor(len_cat).fill_(boundary_points_all[bn][0]).type_as(boundary_points_all[bn]).to(device)
             else:
-                tensor_cat = torch.zeros(len_cat).type_as(boundary_points_all[bn])
-            boundary_points_all[bn] = torch.cat((boundary_points_all[bn], tensor_cat), 0)
+                tensor_cat = torch.zeros(len_cat).type_as(boundary_points_all[bn]).to(device)
+            boundary_points_all[bn] = torch.cat((boundary_points_all[bn].to(device), tensor_cat), 0)
 
     selected_pair_all = torch.stack(selected_pair_all, 0)
     selected_pair_all_len = np.array(selected_pair_all_len)
-    indices = (torch.arange(0, faces_cuda_bn.size(0)) * (1 + faces_cuda_bn.size(0))).type(torch.cuda.LongTensor)
-    pointsRec_refined_boundary = pointsRec_refined.index_select(1, selected_pair_all.view(-1)). \
+    indices = (torch.arange(0, faces_cuda_bn.size(0)) * (1 + faces_cuda_bn.size(0))).type(torch.cuda.LongTensor).to(device)
+    pointsRec_refined_boundary = pointsRec_refined.index_select(1, selected_pair_all.view(-1).to(device)). \
         view(pointsRec_refined.shape[0] * selected_pair_all.shape[0], selected_pair_all.shape[1],
              selected_pair_all.shape[2], pointsRec_refined.shape[2])
     pointsRec_refined_boundary = pointsRec_refined_boundary.index_select(0, indices)
@@ -207,8 +207,8 @@ def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined): # TODO Sapir
 
 
 def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, device='cuda:0'): # TODO Sapir
-    error = torch.pow(error, 2)
-    if not pool == 'sum':
+    error = torch.pow(error, 2) # erorr for each 10000 sampeled faces
+    if not pool == 'sum': # decrease by factor
         tau = tau / 10.0
     ones = (torch.ones(1).to(device)).expand_as(error).type(torch.cuda.FloatTensor)
     zeros = (torch.Tensor(error.size(0) * faces_cuda_bn.size(1)).fill_(0)).to(device)
@@ -218,32 +218,32 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
     face_count = zeros.index_add_(0, index_1d, ones.view(-1)).view(error.size(0), faces_cuda_bn.size(1))
     faces_cuda_bn = faces_cuda_bn.clone()
 
-    if pool == 'mean':
-        face_error = face_error / (face_count + 1e-12)
-    elif pool == 'max':
+    if pool == 'mean': # normalize
+        face_error = face_error / (face_count + 1e-12) 
+    elif pool == 'max': # max value
         face_error = get_max(error.cpu(), index.cpu(), faces_number)
-        face_error = face_error.squeeze(2).to(device)
-    elif pool == 'sum':
+        face_error = face_error.squeeze(2).to(device) 
+    elif pool == 'sum': # the same
         face_error = face_error
-    faces_cuda_bn[face_error > tau] = 0
+    faces_cuda_bn[face_error > tau] = 0 # take only the faces with the small erorr
 
     faces_cuda_set = []
-    for k in torch.arange(0, error.size(0)):
+    for k in torch.arange(0, error.size(0)): # for each image in batch 
         faces_cuda = faces_cuda_bn[k]
-        _, _, boundary_edge = get_boundary(faces_cuda)
-        boundary_edge_point = boundary_edge.astype(np.int64).reshape(-1)
-        counts = pd.value_counts(boundary_edge_point)
-        toremove_point = torch.from_numpy(np.array(counts[counts > 2].index)).to(device)
+        _, _, boundary_edge = get_boundary(faces_cuda) # get boundary edges 
+        boundary_edge_point = boundary_edge.astype(np.int64).reshape(-1) #get all vertices
+        counts = pd.value_counts(boundary_edge_point) # count for each vertices how many times it apears
+        toremove_point = torch.from_numpy(np.array(counts[counts > 2].index)).to(device) # remove vertices that apear more then two times (two edges from each vertex)
         faces_cuda_expand = faces_cuda.unsqueeze(2).expand(faces_cuda.shape[0], faces_cuda.shape[1],
                                                            toremove_point.shape[0])
         toremove_point_expand = toremove_point.unsqueeze(0).unsqueeze(0).\
             expand(faces_cuda.shape[0],faces_cuda.shape[1],toremove_point.shape[0])
-        toremove_index = ((toremove_point_expand == faces_cuda_expand).sum(2).sum(1)) != 0
+        toremove_index = ((toremove_point_expand == faces_cuda_expand).sum(2).sum(1)) != 0 # remove faces
         faces_cuda[toremove_index] = 0
         triangles = faces_cuda.cpu().data.numpy()
 
         v = pd.value_counts(triangles.reshape(-1))
-        v = v[v == 1].index
+        v = v[v == 1].index # vertices that apears only once, needs to be removed - open triangles
         for vi in v:
             if np.argwhere(triangles == vi).shape[0] == 0:
                 continue
@@ -253,3 +253,26 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
     faces_cuda_bn = torch.cat(faces_cuda_set, 0)
 
     return faces_cuda_bn
+
+def final_refined_mesh(selected_pair_all, selected_pair_all_len, pointsRec3_boundary, pointsRec2, batch_size):
+    pointsRec3_set = []
+    for ibatch in torch.arange(0, batch_size):
+        length = selected_pair_all_len[ibatch]
+        if length != 0:
+            index_bp = selected_pair_all[ibatch][:, 0][:length]
+            prb_final = pointsRec3_boundary[ibatch][:length]
+
+            #print(prb_final)
+
+            pr = pointsRec2[ibatch]
+            index_bp = index_bp.view(index_bp.shape[0], -1).expand([index_bp.shape[0], 3])
+            #pr_final = pr.scatter(dim=0, index=index_bp, source=prb_final)
+            pr_final = pr.scatter(0, index_bp, prb_final)
+
+            pointsRec3_set.append(pr_final)
+        else:
+            pr = pointsRec2[ibatch]
+            pr_final = pr
+            pointsRec3_set.append(pr_final)
+    pointsRec3 = torch.stack(pointsRec3_set, 0)
+    return pointsRec3
