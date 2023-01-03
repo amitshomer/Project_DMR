@@ -1,77 +1,80 @@
 import torch
+from torch import nn
 import numpy as np
 
 
-def normalize(input, p=2, dim=1, eps=1e-12):
-    return input / input.norm(p, dim).clamp(min=eps).unsqueeze(dim).expand_as(input)
+def normalize(input, p=2, dim=1, eps=1e-12): # TODO Sapir
+    """ Measures the normal consistency between the generated mesh and ground truth """ 
+    input = input / input.norm(p, dim)
+    input = input.clamp(min=eps)
+    input = input.unsqueeze(dim).expand_as(input)
+    return input
 
-
+ 
 def calculate_l2_loss(x, y):
-    assert x.size() == y.size()
-    ret = torch.mean(torch.pow((x - y), 2))
-    return ret
+    """ L2 loss """ 
+    l2 = nn.MSELoss() 
+    return l2(x,y)
 
 
-def get_edge_loss(vertices,faces):
-    # bs*2562*3 bs*5120*3
-    edges = torch.cat((faces[:,:,:2],faces[:,:,[0,2]],faces[:,:,1:]),1) # bs * (3*5120) *2
+def get_edge_loss(vertices, faces):
+    """  
+        Penalizes flying vertices, which ususally cause long edge - total edges legnth sum
+        vertices - shape [b, 2562, 3]
+        faces - shape [b, 5120, 3]
+    """ 
+    edge1, edge2, edge3 = faces[:,:,:2], faces[:,:,[0,2]] ,faces[:,:,1:]
+    edges = torch.cat((edge1, edge2, edge3),1) # [b, 3*5120, 2]
+
+    bs_edges, edges_num, edges_vertices_num,  = edges.size(0),edges.size(1),edges.size(2) # [b, 3*5120, 2-edge1,edge2]
+    bs_vertices, vertex_coors_num = vertices.size(0), vertices.size(2)  # b, 3 (x,y,z)
+    
+    # For each edge, get vertices (x,y,z) coords - [b, 3*5120, 2, 3] 
     edges_vertices = vertices.index_select(1,edges.view(-1)).\
-        view(vertices.size(0)*edges.size(0),edges.size(1),edges.size(2),vertices.size(2)) #
-    indices = (torch.arange(0,vertices.size(0))*(1+vertices.size(0))).type(torch.cuda.LongTensor)
-    edges_vertices = edges_vertices.index_select(0,indices) # bs * (3*5120) *2 *3
-    edges_len = torch.norm((edges_vertices[:,:,0]-edges_vertices[:,:,1]),2,2)
-    edges_len = torch.pow(edges_len,2)
-    nonzero = len(edges_len.nonzero())
+        view(bs_vertices*bs_edges, edges_num, edges_vertices_num, vertex_coors_num) # [b*b, 3*5120, 2, 3] 
+    indices = (torch.arange(0,bs_vertices)*(1+bs_vertices)).type(torch.cuda.LongTensor)
+    edges_vertices = edges_vertices.index_select(0,indices) # [b, 3*5120, 2, 3]
+
+    # Sum edges length 
+    edges_len = torch.norm((edges_vertices[:,:,0]-edges_vertices[:,:,1]), 2, 2)
+    edges_len = torch.pow(edges_len, 2)
+    nonzero = len(edges_len.nonzero()) # Returns a tensor containing the indices of all non-zero elements of input
     edge_loss = torch.sum(edges_len)/nonzero
+    
     return edge_loss
 
 
-def get_edge_loss_stage1(vertices,edge):
-    # vertices bs*points_number*3 edge edge_number*2
-    vertices_edge = vertices.index_select(1,edge.view(-1)).\
+def get_edge_loss_stage1(vertices, edge):
+    """  
+        Penalizes flying vertices, which ususally cause long edge - mean edge length
+        vertices - shape [b, 2562, 3]
+        edge - shape [b, 3*5120, 2]
+    """ 
+    edges_vertices = vertices.index_select(1,edge.view(-1)).\
         view(vertices.size(0),edge.size(0),edge.size(1),vertices.size(2))
-    vertices_edge_vector = vertices_edge[:,:,0] - vertices_edge[:,:,1]
-    vertices_edge_len = torch.pow(vertices_edge_vector.norm(2,2),2)
-    edge_loss = torch.mean(vertices_edge_len)
+
+    edges_len = torch.norm((edges_vertices[:,:,0]-edges_vertices[:,:,1]), 2, 2)
+    edges_len = torch.pow(edges_len,2)
+    edge_loss = torch.mean(edges_len)
+
     return edge_loss
 
 
-def get_normal_loss(vertices, faces, gt_normals, idx2):
-    idx2 = idx2.type(torch.cuda.LongTensor).detach()
-    edges = torch.cat((faces[:,:,:2],faces[:,:,[0,2]],faces[:,:,1:]),1)
-    edges_vertices = vertices.index_select(1,edges.view(-1)).\
-        view(vertices.size(0)*edges.size(0),edges.size(1),edges.size(2),vertices.size(2))
-    indices = (torch.arange(0,vertices.size(0))*(1+vertices.size(0))).type(torch.cuda.LongTensor)
-    edges_vertices = edges_vertices.index_select(0,indices)
-    edges_len1 = edges_vertices[:,:,0] - edges_vertices[:,:,1]
-    edges_len2 = edges_vertices[:,:,1] - edges_vertices[:,:,0]
-    edges_vector = torch.stack((edges_len1,edges_len2),2)
-    gt_normals = gt_normals.index_select(1, idx2.contiguous().view(-1)).contiguous().view(gt_normals.size(0) * idx2.size(0),
-                                                                                          idx2.size(1), gt_normals.size(2))
-    gt_normals = gt_normals.index_select(0, indices)
-    gt_normals_edges = gt_normals.index_select(1, edges.view(-1)).view(gt_normals.size(0) * edges.size(0),
-                                                                       edges.size(1), edges.size(2), gt_normals.size(2))
-    gt_normals_edges = gt_normals_edges.index_select(0, indices)
-    gt_normals_edges = normalize(gt_normals_edges, p=2, dim=3)
-    edges_vector = normalize(edges_vector,p=2,dim=3)
-    cosine = torch.abs(torch.sum(torch.mul(edges_vector, gt_normals_edges), 3))
-    nonzero = len(cosine.nonzero())
-    normal_loss = torch.sum(cosine)/nonzero
-
-    return normal_loss
-
-
-def smoothness_loss_parameters(faces):
-    # faces faces_number*3(array)
+def smoothness_loss_parameters(faces): # TODO Sapir
+    """
+        
+        faces - shape [b, 5120, 3]
+    """
     print('calculating the smoothness loss parameters, gonna take a few moments')
-    if hasattr(faces, 'get'):
-        faces = faces.get()
-    vertices = list(set([tuple(v) for v in np.sort(np.concatenate((faces[:, 0:2], faces[:, 1:3]), axis=0))])) # edges
+    
+    if hasattr(faces, 'get'): faces = faces.get()
+    
+    edge1, edge2 = faces[:, 0:2], faces[:, 1:3]
+    edges12 = list(set([tuple(v) for v in np.sort(np.concatenate((edge1, edge2), axis=0))]))
+    v0s = np.array([v[0] for v in edges12], 'int32')
+    v1s = np.array([v[1] for v in edges12], 'int32')
 
-    v0s = np.array([v[0] for v in vertices], 'int32')
-    v1s = np.array([v[1] for v in vertices], 'int32')
-    v2s = []
-    v3s = []
+    v2s, v3s = [], []
     for v0, v1 in zip(v0s, v1s):
         count = 0
         for face in faces:
@@ -93,7 +96,10 @@ def smoothness_loss_parameters(faces):
     return v0s, v1s, v2s, v3s
 
 
-def get_smoothness_loss_stage1(vertices, parameters, eps=1e-6):
+def get_smoothness_loss_stage1(vertices, parameters, eps=1e-6): # TODO Sapir
+    """ 
+        Define a laplacian coordinate for each vertex
+    """ 
     # make v0s, v1s, v2s, v3s
     # vertices (bs*num_points*3)
     v0s, v1s, v2s, v3s = parameters
@@ -145,7 +151,7 @@ def get_smoothness_loss_stage1(vertices, parameters, eps=1e-6):
     return loss
 
 
-def get_smoothness_loss(vertices, parameters,faces_bn,eps=1e-6):
+def get_smoothness_loss(vertices, parameters,faces_bn,eps=1e-6): # TODO Sapir
     # make v0s, v1s, v2s, v3s
     # vertices (bs*num_points*3)
     v0s, v1s, v2s, v3s = parameters
@@ -223,3 +229,33 @@ def get_smoothness_loss(vertices, parameters,faces_bn,eps=1e-6):
     cos = torch.sum(cb1*cb2, dim=2) / (cb1l1 * cb2l1 + eps)
     loss = torch.sum((cos+1).pow(2)) / batch_size
     return loss
+
+
+def get_normal_loss(vertices, faces, gt_normals, idx2): # TODO Sapir
+    """ 
+            This loss requires the edge between a vertex with its neighbors
+            to perpendicular to the observation from the ground truth
+    """
+    idx2 = idx2.type(torch.cuda.LongTensor).detach()
+    edges = torch.cat((faces[:,:,:2],faces[:,:,[0,2]],faces[:,:,1:]),1)
+    edges_vertices = vertices.index_select(1,edges.view(-1)).\
+        view(vertices.size(0)*edges.size(0),edges.size(1),edges.size(2),vertices.size(2))
+    indices = (torch.arange(0,vertices.size(0))*(1+vertices.size(0))).type(torch.cuda.LongTensor)
+    edges_vertices = edges_vertices.index_select(0,indices)
+    edges_len1 = edges_vertices[:,:,0] - edges_vertices[:,:,1]
+    edges_len2 = edges_vertices[:,:,1] - edges_vertices[:,:,0]
+    edges_vector = torch.stack((edges_len1,edges_len2),2)
+    gt_normals = gt_normals.index_select(1, idx2.contiguous().view(-1)).contiguous().view(gt_normals.size(0) * idx2.size(0),
+                                                                                          idx2.size(1), gt_normals.size(2))
+    gt_normals = gt_normals.index_select(0, indices)
+    gt_normals_edges = gt_normals.index_select(1, edges.view(-1)).view(gt_normals.size(0) * edges.size(0),
+                                                                       edges.size(1), edges.size(2), gt_normals.size(2))
+    gt_normals_edges = gt_normals_edges.index_select(0, indices)
+    gt_normals_edges = normalize(gt_normals_edges, p=2, dim=3)
+    edges_vector = normalize(edges_vector,p=2,dim=3)
+    cosine = torch.abs(torch.sum(torch.mul(edges_vector, gt_normals_edges), 3))
+    nonzero = len(cosine.nonzero())
+    normal_loss = torch.sum(cosine)/nonzero
+
+    return normal_loss
+
