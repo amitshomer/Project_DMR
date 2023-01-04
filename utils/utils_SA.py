@@ -52,12 +52,15 @@ def get_max(errors, sampled_face_index, fn=5120):
 
 def get_edges(faces):
     ''' Return unique edge list'''
-    
     edge = []
     for i, j in enumerate(faces):
-        edge1, edge2, edge3 = j[:2], j[1:], j[[0, 2]]
-        edge.append(edge1).append(edge2).append(edge3)
+        edge.append(j[:2])
+        edge.append(j[1:])
+        edge.append(j[[0, 2]])
     edge = np.array(edge)
+    #edge1, edge2, edge3 = faces[:, 0:2], faces[:, 1:3], faces[:, [0,2]]
+    #edge = list(set([tuple(v) for v in np.sort(np.concatenate((edge1, edge2, edge3), axis=0))]))
+    #edge = np.array(edge)
 
     # Represent each edge with a scalar
     edge_im = edge[:, 0] * edge[:, 1] + (edge[:, 0] + edge[:, 1]) * 1j
@@ -70,7 +73,10 @@ def get_edges(faces):
 
 
 def get_boundary(faces):
-    ''' Boundary edges are not shared between faces, meaning there's only one face that include this edge '''
+    ''' 
+        Boundary edges are not shared between faces, meaning there's only one face that include this edge
+        NOTE alternative implementation is too slow, using the original
+    '''
 
     # Face = v1, v2, v3
     vertices_num = faces.max().item() + 1
