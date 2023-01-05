@@ -1,12 +1,12 @@
 import torch
 import numpy as np
-
+import utils.loss_SA as loss_sa 
 
 def normalize(input, p=2, dim=1, eps=1e-12): # TODO Sapir
     return input / input.norm(p, dim).clamp(min=eps).unsqueeze(dim).expand_as(input)
 
  
-def calculate_l2_loss(x, y): # TODO Sapir
+def mse_loss(x, y): # TODO Sapir
     assert x.size() == y.size()
     ret = torch.mean(torch.pow((x - y), 2))
     return ret
@@ -54,6 +54,7 @@ def get_normal_loss(vertices, faces, gt_normals, idx2): # TODO Sapir
     gt_normals_edges = gt_normals_edges.index_select(0, indices)
     gt_normals_edges = normalize(gt_normals_edges, p=2, dim=3)
     edges_vector = normalize(edges_vector,p=2,dim=3)
+
     cosine = torch.abs(torch.sum(torch.mul(edges_vector, gt_normals_edges), 3))
     nonzero = len(cosine.nonzero())
     normal_loss = torch.sum(cosine)/nonzero
@@ -66,7 +67,7 @@ def smoothness_loss_parameters(faces): # TODO Sapir
     print('calculating the smoothness loss parameters, gonna take a few moments')
     if hasattr(faces, 'get'):
         faces = faces.get()
-    vertices = list(set([tuple(v) for v in np.sort(np.concatenate((faces[:, 0:2], faces[:, 1:3]), axis=0))])) # edges
+    vertices = list(set([tuple(v) for v in np.sort(np.concatenate((faces[:, 0:2], faces[:, 1:3]), axis=0))])) 
 
     v0s = np.array([v[0] for v in vertices], 'int32')
     v1s = np.array([v[1] for v in vertices], 'int32')
@@ -161,8 +162,8 @@ def get_smoothness_loss(vertices, parameters,faces_bn,eps=1e-6): # TODO Sapir–
     faces_bn_view = faces_bn.view(faces_bn.size(0),-1)
     faces_bn_view = faces_bn_view.sort(1)[0]
 
-    count = torch.ones(1).expand_as(faces_bn_view).type(torch.cuda.LongTensor)
-    count_sum = torch.zeros(1).expand((faces_bn.size(0),vertices.shape[1])).type(torch.cuda.LongTensor)
+    count = torch.ones(1).expand_as(faces_bn_view).type(torch.cuda.LongTensor)# count each face?
+    count_sum = torch.zeros(1).expand((faces_bn.size(0),vertices.shape[1])).type(torch.cuda.LongTensor) # count_sum for each edge how many faces it's included in
 
     count_sum = count_sum.scatter_add(1, faces_bn_view, count)
     count_sum = (count_sum > 0).type(torch.cuda.ByteTensor)

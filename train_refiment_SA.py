@@ -8,7 +8,7 @@ from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 , DeformNet, Refinement
 
 from utils.utils import weights_init, AverageValueMeter, get_edges, prune, final_refined_mesh, samples_random
-from utils.loss import smoothness_loss_parameters, calculate_l2_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
+from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
 
 from utils.dataset import ShapeNet
 import random, os, json, sys

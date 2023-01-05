@@ -8,8 +8,8 @@ sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer dis
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
 
-from utils.utils import weights_init, AverageValueMeter, get_edges, prune
-from utils.loss import smoothness_loss_parameters, calculate_l2_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
+from utils.utils_SA import weights_init, AverageValueMeter, get_edges, prune
+from utils.loss_SA import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
 
 from utils.dataset import ShapeNet
 import random, os, json, sys
@@ -17,14 +17,15 @@ import torch
 import torch.optim as optim
 import scipy 
 import numpy as np
+
+#import utils.utils_SA as utils_sa
+#import utils.loss_SA as loss_sa
 torch.cuda.empty_cache()
 random.seed(6185)
 torch.manual_seed(6185)
 
-
-
 parser = argparse.ArgumentParser()
-parser.add_argument('--batch_size', type=int, default=24, help=' batch size')
+parser.add_argument('--batch_size', type=int, default=2, help=' batch size')
 parser.add_argument('--workers', type=int, default=8,  help='number of data loading workers')
 parser.add_argument('--epoch', type=int, default=120, help='number of epochs to train for')
 parser.add_argument('--num_points', type=int, default=10000, help='number of points for GT')
@@ -75,8 +76,15 @@ faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor).to(
 vertices_sphere = np.array(mesh['v'])
 vertices_sphere = (torch.cuda.FloatTensor(vertices_sphere)).transpose(0, 1).contiguous()
 vertices_sphere = vertices_sphere.contiguous().unsqueeze(0).to(cuda)
-edge_cuda = get_edges(faces) # TODO- maybe edit this functuion 
-parameters = smoothness_loss_parameters(faces) # TODO - check what this thing doing 
+#edge_cuda_sa = utils_sa.get_edges(faces.copy()) 
+edge_cuda = get_edges(faces) 
+#assert ((edge_cuda != edge_cuda_sa).sum() == 0)
+#parameters = loss_sa.smoothness_loss_parameters(faces.copy())
+parameters = smoothness_loss_parameters(faces)
+#assert ((parameters[0] != parameters_sa[0]).sum() == 0)
+#assert ((parameters[1] != parameters_sa[1]).sum() == 0)
+#assert ((parameters[2] != parameters_sa[2]).sum() == 0)
+#assert ((parameters[3] != parameters_sa[3]).sum() == 0)
 
 ## Load Models ##
 # Img encoder 
@@ -173,15 +181,22 @@ for epoch in range(args.epoch):
         CDs_loss_stage2 = torch.mean(dist1_samples) + torch.mean(dist2_samples)
         # l2 loss 
         error_GT = torch.sqrt(dist2_samples.detach()[:,random_choice2])
-        l2_loss = calculate_l2_loss(out_error_estimator2, error_GT.detach())
+        #l2_loss_sa = loss_sa.mse_loss(out_error_estimator2.clone(), error_GT.clone().detach())
+        l2_loss = mse_loss(out_error_estimator2, error_GT.detach())
+        #assert ((l2_loss!=l2_loss_sa).sum()==0)
         # edge loss 
+        #edge_loss_sa = loss_sa.get_edge_loss(pointsRec2.clone(), faces_cuda_bn.clone())
         edge_loss = get_edge_loss(pointsRec2, faces_cuda_bn)
+        #assert ((edge_loss!=edge_loss_sa).sum()==0)
         # smoothnes_loss 
+        #smoothness_loss_sa = loss_sa.get_smoothness_loss(pointsRec2.clone(), parameters, faces_cuda_bn.clone())
         smoothness_loss = get_smoothness_loss(pointsRec2, parameters, faces_cuda_bn)
+        #assert ((smoothness_loss!=smoothness_loss_sa).sum()==0)
         # normal loss
         #faces_cuda_bn = faces_cuda.unsqueeze(0).expand(pointsRec.size(0), faces_cuda.size(0),faces_cuda.size(1))
+        #normal_loss_sa = loss_sa.get_normal_loss(pointsRec2.clone(), faces_cuda_bn.clone(), normals.clone(), idx2.clone())
         normal_loss = get_normal_loss(pointsRec2, faces_cuda_bn, normals, idx2)
-
+        #assert ((normal_loss!=normal_loss_sa).sum()==0)
         total_loss = CDs_loss_stage2 + l2_loss + 0.05 * edge_loss + (2e-7) * smoothness_loss \
                    + (5e-3) * normal_loss
 
@@ -236,7 +251,7 @@ for epoch in range(args.epoch):
             CDs_loss_stage2 = torch.mean(dist1_samples) + torch.mean(dist2_samples)
             # l2 loss 
             error_GT = torch.sqrt(dist2_samples.detach()[:,random_choice2])
-            l2_loss = calculate_l2_loss(out_error_estimator2, error_GT.detach())
+            l2_loss = mse_loss(out_error_estimator2, error_GT.detach())
             # edge loss 
             edge_loss = get_edge_loss(pointsRec2, faces_cuda_bn)
             # smoothnes_loss 

@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import pandas as pd
 from scipy.sparse import coo_matrix
-
+import utils.utils_SA as utils_sa
 
 # initialize the weighs of the network for Convolutional layers and batchnorm layers
 class AverageValueMeter(object): # TODO Sapir
@@ -69,7 +69,7 @@ def get_edges(faces):
 
 def get_boundary(faces):
     vertices_number = faces.max().item() + 1 # Vertices amount
-
+    
     triangles_new = faces.cpu().data.numpy()
     triangles_new = triangles_new[triangles_new.sum(1).nonzero()] # TODO not sure? 
 
@@ -175,6 +175,10 @@ def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
     for bn in torch.arange(0, faces_cuda_bn.shape[0]):
         faces_each = faces_cuda_bn[bn]
         selected_pair, boundary_point, _ = get_boundary(faces_each)
+        #selected_pair_sa, boundary_point_sa, aa_sa = utils_sa.get_boundary(faces_each.clone())
+        #assert ((selected_pair != selected_pair_sa).sum()==0)
+        #assert ((boundary_point != boundary_point_sa).sum()==0)
+        #assert ((aa != aa_sa).sum()==0)
         selected_pair_all.append(selected_pair)
         selected_pair_all_len.append(len(selected_pair))
         boundary_points_all.append(boundary_point)
@@ -221,7 +225,9 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
     if pool == 'mean': # normalize
         face_error = face_error / (face_count + 1e-12) 
     elif pool == 'max': # max value
+        #face_error_sa = utils_sa.get_max(error.clone().cpu(), index.clone().cpu(), faces_number)
         face_error = get_max(error.cpu(), index.cpu(), faces_number)
+        #assert ((face_error != face_error_sa).sum()==0)
         face_error = face_error.squeeze(2).to(device) 
     elif pool == 'sum': # the same
         face_error = face_error
@@ -231,6 +237,8 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
     for k in torch.arange(0, error.size(0)): # for each image in batch 
         faces_cuda = faces_cuda_bn[k]
         _, _, boundary_edge = get_boundary(faces_cuda) # get boundary edges 
+        #, _, boundary_edge_sa = utils_sa.get_boundary(faces_cuda.clone())
+        #assert ((boundary_edge != boundary_edge_sa).sum() == 0)
         boundary_edge_point = boundary_edge.astype(np.int64).reshape(-1) #get all vertices
         counts = pd.value_counts(boundary_edge_point) # count for each vertices how many times it apears
         toremove_point = torch.from_numpy(np.array(counts[counts > 2].index)).to(device) # remove vertices that apear more then two times (two edges from each vertex)

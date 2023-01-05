@@ -10,7 +10,7 @@ from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
 
 from utils.utils import weights_init, AverageValueMeter, get_edges
-from utils.loss import smoothness_loss_parameters, calculate_l2_loss, get_edge_loss_stage1, get_smoothness_loss_stage1, get_normal_loss # TODO - change names 
+from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss_stage1, get_normal_loss # TODO - change names 
 
 from utils.dataset import ShapeNet
 import random, os, json, sys
@@ -175,9 +175,9 @@ for epoch in range(args.epoch):
         CDs_loss = torch.mean(dist1_samples) + torch.mean(dist2_samples)
         # l2 loss 
         error_GT = torch.sqrt(dist2_samples.detach()[:,random_choice])
-        l2_loss = calculate_l2_loss(out_error_estimator, error_GT.detach())
+        l2_loss = mse_loss(out_error_estimator, error_GT.detach())
         # edge loss 
-        edge_loss = get_edge_loss_stage1(pointsRec, edge_cuda.detach())
+        edge_loss = get_edge_loss(pointsRec, edge_cuda.detach(), stage=1)
         # smoothnes_loss 
         smoothness_loss = get_smoothness_loss_stage1(pointsRec, parameters)
         # normal loss
@@ -231,9 +231,9 @@ for epoch in range(args.epoch):
             CDs_loss = torch.mean(dist1_samples) + torch.mean(dist2_samples)
             # l2 loss 
             error_GT = torch.sqrt(dist2_samples.detach()[:,random_choice])
-            l2_loss = calculate_l2_loss(out_error_estimator, error_GT.detach())
+            l2_loss = mse_loss(out_error_estimator, error_GT.detach())
             # edge loss 
-            edge_loss = get_edge_loss_stage1(pointsRec, edge_cuda.detach())
+            edge_loss = get_edge_loss(pointsRec, edge_cuda.detach(), stage=1)
             # smoothnes_loss 
             smoothness_loss = get_smoothness_loss_stage1(pointsRec, parameters)
             # normal loss

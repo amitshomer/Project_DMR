@@ -5,8 +5,9 @@ import torch.nn.parallel
 import torch.utils.data
 import torch.nn.functional as F
 import Models.resnet as resnet
-from utils.utils import samples_random, get_boundary_points_bn
-from utils.utils import prune as prune_func
+from utils.utils_SA import samples_random, get_boundary_points_bn
+from utils.utils_SA import prune as prune_func
+import utils.utils_SA as utils_sa
 
 import numpy as np
 
@@ -161,7 +162,10 @@ class Subnet1(nn.Module):
                 faces_cuda_bn = faces_cuda.unsqueeze(0).expand(batch_size, faces_cuda.size(0), faces_cuda.size(1))
             else:
                 faces_cuda_bn = faces_cuda.to(self.cuda_device)
-            faces_cuda_bn = prune_func(faces_cuda_bn.detach(), out_error_estimator.detach(), args.tau, index_sample, 'max', device = self.cuda_device)
+            t = args.tau
+            #faces_cuda_bn_sa = utils_sa.prune_func(faces_cuda_bn.clone().detach(), out_error_estimator.clone().detach(), t, index_sample.clone(), 'max', device = self.cuda_device)
+            faces_cuda_bn = prune_func(faces_cuda_bn.detach(), out_error_estimator.detach(), t, index_sample, 'max', device = self.cuda_device)
+            #assert ((faces_cuda_bn != faces_cuda_bn_sa).sum() == 0 )
         else:
             faces_cuda_bn = None
 

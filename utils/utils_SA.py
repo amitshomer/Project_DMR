@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import pandas as pd
+import utils.loss_SA as loss_sa
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -58,9 +59,6 @@ def get_edges(faces):
         edge.append(j[1:])
         edge.append(j[[0, 2]])
     edge = np.array(edge)
-    #edge1, edge2, edge3 = faces[:, 0:2], faces[:, 1:3], faces[:, [0,2]]
-    #edge = list(set([tuple(v) for v in np.sort(np.concatenate((edge1, edge2, edge3), axis=0))]))
-    #edge = np.array(edge)
 
     # Represent each edge with a scalar
     edge_im = edge[:, 0] * edge[:, 1] + (edge[:, 0] + edge[:, 1]) * 1j
@@ -70,6 +68,61 @@ def get_edges(faces):
     
     edge_cuda = (torch.from_numpy(edge_unique).type(torch.cuda.LongTensor)).detach()
     return edge_cuda
+
+
+def find_boundary_edges_try(triangles):
+    # Extract edge vertices from faces
+    edges = np.concatenate((triangles[:, :2], triangles[:, [0, 2]], triangles[:, 1:]), 0) # array of edges
+    edges.sort(1)
+    
+    # v0s and v1s are the first and the second vertices that define an edge 
+    v0s, v1s = np.array([v[0] for v in edges], 'int32'), np.array([v[1] for v in edges], 'int32')
+    boundary_edge = []
+
+    triangles_copy = np.copy(triangles)
+    # Iterate over each edge 
+    for v0, v1 in zip(v0s, v1s):
+        # Find faces that contain this edge
+        mask1 = loss_sa.get_v0v1_faces(triangles_copy, v0, v1)
+        mask2 = loss_sa.get_v0v1_faces(triangles_copy, v1, v0)
+        mask = np.logical_or(mask1, mask2)
+        
+        face_vertices = triangles_copy[mask]
+        
+        if face_vertices.shape[0] == 1:
+            boundary_edge.append((v0, v1))
+    
+    return np.array(boundary_edge)
+
+
+def get_boundary_try(faces):
+    ''' 
+        Boundary edges are not shared between faces, meaning there's only one face that include this edge
+    '''
+    triangles = faces.cpu().data.numpy()
+    triangles = triangles[triangles.sum(1).nonzero()]
+
+    # Get boundary edges
+    boundary_edge = find_boundary_edges_try(triangles)
+    boundary_edge = np.array(sorted(boundary_edge, key=lambda x: (x[0], x[1])))
+
+    # For each boundary vertex, return its two edges 
+    boundary_edge_inverse = boundary_edge[:, [1, 0]]
+    boundary_edge_all = np.concatenate((boundary_edge, boundary_edge_inverse), 0)
+    boundary_edge_all = boundary_edge_all[np.argsort(boundary_edge_all[:, 0])]
+    
+    # Vertices 
+    boundary_vertices = np.unique(boundary_edge)
+    boundary_vertices = torch.from_numpy(boundary_vertices).type(torch.cuda.LongTensor)
+
+    # Return boundary vertices  
+    selected_point = np.where(boundary_edge_all[:, 0] == np.concatenate((boundary_edge_all[1:, 0],
+                                                                         boundary_edge_all[:1, 0]), 0))
+    boundary_pair = np.concatenate((boundary_edge_all[selected_point[0]],
+                                    boundary_edge_all[selected_point[0] + 1][:, 1:]), 1)
+    boundary_pair = torch.from_numpy(boundary_pair).type(torch.cuda.LongTensor)
+    
+    return boundary_pair, boundary_vertices, boundary_edge
 
 
 def get_boundary(faces):
@@ -125,7 +178,7 @@ def get_boundary(faces):
     return boundary_pair, boundary_vertices, boundary_edge
 
 
-def sa_faces_selection(sampling_number, device, faces_points):
+def faces_selection(sampling_number, device, faces_points):
     ''' Select faces to be sampled by normal size ''' 
 
     faces = faces_points.cpu().data.numpy() # [b, n_faces, 3 vertices, 3 coords]
@@ -161,7 +214,7 @@ def sa_faces_selection(sampling_number, device, faces_points):
     return faces_index_tensor_sort
 
 
-def sa_samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): 
+def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): 
     """ Random vertices sampleing on given faces """ 
 
     if len(faces_cuda.size())==2:
@@ -236,7 +289,7 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
         faces_cuda[toremove_index] = 0
         triangles = faces_cuda.cpu().data.numpy()
 
-        # Remove vertices that have 2 edge - open triangles
+        # Remove vertices that have 1 edge - open triangles
         v = pd.value_counts(triangles.reshape(-1))
         v = v[v == 1].index
         for vi in v:
@@ -251,3 +304,43 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
     faces_cuda_bn = torch.cat(faces_cuda_set, 0)
     return faces_cuda_bn
 
+
+def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
+    selected_pair_all, selected_pair_all_len, boundary_points_all, boundary_points_all_len = [], [], [], []
+
+    for edge_bn in torch.arange(0, faces_cuda_bn.shape[0]):
+        faces_each = faces_cuda_bn[edge_bn]
+        selected_pair, boundary_point, _ = get_boundary(faces_each)
+        #selected_pair_sa, boundary_point_sa, aa_sa = utils_sa.get_boundary(faces_each.clone())
+        #assert ((selected_pair != selected_pair_sa).sum()==0)
+        #assert ((boundary_point != boundary_point_sa).sum()==0)
+        #assert ((aa != aa_sa).sum()==0)
+        selected_pair_all.append(selected_pair)
+        selected_pair_all_len.append(len(selected_pair))
+        boundary_points_all.append(boundary_point)
+        boundary_points_all_len.append(len(boundary_point))
+
+    max_len = np.array(selected_pair_all_len).max()
+    max_len2 = np.array(boundary_points_all_len).max()
+    for bn in torch.arange(0, faces_cuda_bn.shape[0]):
+        if len(selected_pair_all[bn]) < max_len:
+            len_cat = max_len - len(selected_pair_all[bn])
+            tensor_cat = torch.zeros(len_cat, 3).type_as(selected_pair_all[bn])
+            selected_pair_all[bn] = torch.cat((selected_pair_all[bn], tensor_cat), 0)
+        if len(boundary_points_all[bn]) < max_len2:
+            len_cat = max_len2 - len(boundary_points_all[bn])
+            if len(boundary_points_all[bn]) > 0:
+                tensor_cat = torch.Tensor(len_cat).fill_(boundary_points_all[bn][0]).type_as(boundary_points_all[bn]).to(device)
+            else:
+                tensor_cat = torch.zeros(len_cat).type_as(boundary_points_all[bn]).to(device)
+            boundary_points_all[bn] = torch.cat((boundary_points_all[bn].to(device), tensor_cat), 0)
+
+    selected_pair_all = torch.stack(selected_pair_all, 0)
+    selected_pair_all_len = np.array(selected_pair_all_len)
+    indices = (torch.arange(0, faces_cuda_bn.size(0)) * (1 + faces_cuda_bn.size(0))).type(torch.cuda.LongTensor).to(device)
+    pointsRec_refined_boundary = pointsRec_refined.index_select(1, selected_pair_all.view(-1).to(device)). \
+        view(pointsRec_refined.shape[0] * selected_pair_all.shape[0], selected_pair_all.shape[1],
+             selected_pair_all.shape[2], pointsRec_refined.shape[2])
+    pointsRec_refined_boundary = pointsRec_refined_boundary.index_select(0, indices)
+
+    return pointsRec_refined_boundary, selected_pair_all, selected_pair_all_len
