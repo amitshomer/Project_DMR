@@ -192,26 +192,25 @@ def faces_selection(sampling_number, device, faces_points):
     normal_sum = np.sum(normal_size, axis=1) # [b]
     # Calculate the cumulative sum of normals for each batch
     normal_cum = np.cumsum(normal_size, axis=1) # [b, n_faces]
+    # Generate random numbers between 0 and 1
+    faces_pick = normal_sum[:, np.newaxis] * np.random.random(sampling_number)[np.newaxis, :]
 
     # Select faces using the cumulative sum of normals
     faces_index = []
     for i in range(normal_cum.shape[0]):
-        # Generate random numbers between 0 and 1
-        randoms = np.random.random(sampling_number)
-        # Multiply the random numbers by the sum of normals for the current batch
-        faces_pick = normal_sum[i] * randoms
         # Find the index of the selected faces using the cumulative sum of normals
-        index = np.searchsorted(normal_cum[i], faces_pick)
+        index = np.searchsorted(normal_cum[i], faces_pick[i])
         # Append the selected indices to the list
         faces_index.append(index)
 
     # Clip the values to the range [0, n_faces - 1]
     faces_index = np.clip(np.array(faces_index), 0, normal_cum.shape[1] - 1)
-    faces_index_tensor = torch.from_numpy(faces_index).to(device).type(torch.cuda.LongTensor)
+    faces_index_tensor = torch.from_numpy(faces_index).to(device).type(torch.cuda.LongTensor).to(device)
     
     # Sort the indices in ascending order
     faces_index_tensor_sort = faces_index_tensor.sort(1)[0]
     return faces_index_tensor_sort
+
 
 
 def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): 
@@ -233,25 +232,32 @@ def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'):
     faces_index_sample = faces_selection(sampled_number, device, faces_points)
 
     # Select the vertices of the sampled triangles
-    faces_sampled = faces_points[faces_index_sample].clone()
-    vertices = faces_sampled[:, :, :2]
-    tri_vectors = vertices[:, :, 1] - vertices[:, :, 0]
-    
-    # Generate random lengths for each sampled triangle
-    diag_index = torch.arange(0, pointsRec.size(0)).to(device).type(torch.cuda.LongTensor)
-    diag_index = (1 + faces_index_sample.size(0)) * diag_index
-    vertices = vertices.index_select(0, diag_index)
+    tri_origins = faces_points[:, :, 0].clone()
+    tri_vectors = faces_points[:, :, 1:].clone()
+    tri_vectors = tri_vectors - tri_origins.unsqueeze(2).expand_as(tri_vectors)
+
+    tri_origins = tri_origins.index_select(1, faces_index_sample.view(-1)).view(
+        tri_origins.size()[0] * faces_index_sample.size()[0],
+        faces_index_sample.size()[1], tri_origins.size()[2])
+    tri_vectors = tri_vectors.index_select(1, faces_index_sample.view(-1)).view(
+        tri_vectors.size()[0] * faces_index_sample.size()[0],
+        faces_index_sample.size()[1], tri_vectors.size()[2], tri_vectors.size()[3])
+
+    diag_index = (torch.arange(0, pointsRec.size()[0]).to(device))
+    diag_index=diag_index.type(torch.cuda.LongTensor)
+    diag_index = (1+faces_index_sample.size(0)) * diag_index
+
+    tri_origins = tri_origins.index_select(0, diag_index)
     tri_vectors = tri_vectors.index_select(0, diag_index)
-    
-    random_lengths = torch.randn(pointsRec.size(0), vertices.size(1), 2, 1).uniform_(0, 1).to(device)
-    random_test = random_lengths.sum(2).squeeze(2) > 1.0
+
+    random_lenghts = ((torch.randn(pointsRec.size()[0], tri_origins.size()[1], 2, 1).uniform_(0, 1)).to(device))
+    random_test = random_lenghts.sum(2).squeeze(2) > 1.0
     random_test_minus = random_test.type(torch.cuda.FloatTensor).unsqueeze(2).unsqueeze(3).repeat(1, 1, 2, 1)
-    random_lengths = torch.abs(random_lengths - random_test_minus)
-    random_lengths = random_lengths.repeat(1, 1, 1, 3)
-    
-    # Calculate the sample vectors and add them to the vertices of the sampled triangles
-    sample_vectors = (tri_vectors * random_lengths).sum(2)
-    samples = sample_vectors + vertices[:, :, 0]
+    random_lenghts = torch.abs(random_lenghts - random_test_minus)
+    random_lenghts = random_lenghts.repeat(1,1,1,3)
+
+    sample_vector = (tri_vectors * random_lenghts).sum(2)
+    samples = sample_vector + tri_origins
 
     return samples, faces_index_sample
 
