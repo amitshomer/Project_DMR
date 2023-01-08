@@ -4,12 +4,13 @@ import sys
 sys.path.insert(1, '/data/ashomer/project/TMNet') # TODO - fix Chamfer distance compile in this folder
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer distance compile in this folder
+# import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
 
-from utils.utils_SA import weights_init, AverageValueMeter, get_edges, prune
-from utils.loss_SA import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
+from utils.utils import weights_init, AverageValueMeter, get_edges, prune
+from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
 
 from utils.dataset import ShapeNet
 import random, os, json, sys
@@ -25,7 +26,7 @@ random.seed(6185)
 torch.manual_seed(6185)
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--batch_size', type=int, default=2, help=' batch size')
+parser.add_argument('--batch_size', type=int, default=24, help=' batch size')
 parser.add_argument('--workers', type=int, default=8,  help='number of data loading workers')
 parser.add_argument('--epoch', type=int, default=120, help='number of epochs to train for')
 parser.add_argument('--num_points', type=int, default=10000, help='number of points for GT')
@@ -39,7 +40,7 @@ parser.add_argument('--num_vertices', type=int, default=2562, help='number of ve
 parser.add_argument('--folder_path', type=str, default='./log/subnet1/', help='model path from the pretrained model')
 parser.add_argument('--tau', type=float, default=0.1)
 
-parser.add_argument('--device', type=int, default=2, help='GPU device')
+parser.add_argument('--device', type=int, default=1, help='GPU device')
 
 # parser.add_argument('--manualSeed', type=int, default=6185)
 args = parser.parse_args()

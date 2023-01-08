@@ -43,6 +43,14 @@
             "program": "train_refiment_SA.py",
             "console": "integratedTerminal",
             "justMyCode": true
+        },
+        {
+            "name": "plot_mesh",
+            "type": "python",
+            "request": "launch",
+            "program": "plot_mesh.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
         }
     ]
 }

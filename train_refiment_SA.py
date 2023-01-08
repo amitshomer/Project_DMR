@@ -170,10 +170,10 @@ for epoch in range(args.epoch):
             #Subnet2
             pointsRec2, pointsRec_samples2, out_error_estimator2, random_choice2, faces_cuda_bn2 = subnet2(args= args, img_featrue=feature_img, points=pointsRec, faces_cuda=faces_cuda_bn, num_points= args.num_points, num_samples= args.num_samples, prune= True, tau = args.tau/2)
                 
-        #Refiment 
-        pointsRec3_boundary, displace_loss, selected_pair_all, selected_pair_all_len = refinement(points = pointsRec2, img_featrue = feature_img, faces_cuda_bn = faces_cuda_bn2 )
-        pointsRec3 = final_refined_mesh(selected_pair_all, selected_pair_all_len, pointsRec3_boundary, pointsRec2, batch_size = img.shape[0] )
-        pointsRec3_samples, _ = samples_random(faces_cuda_bn, pointsRec3, args.num_points, device = cuda)
+            #Refiment 
+            pointsRec3_boundary, displace_loss, selected_pair_all, selected_pair_all_len = refinement(points = pointsRec2, img_featrue = feature_img, faces_cuda_bn = faces_cuda_bn2 )
+            pointsRec3 = final_refined_mesh(selected_pair_all, selected_pair_all_len, pointsRec3_boundary, pointsRec2, batch_size = img.shape[0] )
+            pointsRec3_samples, _ = samples_random(faces_cuda_bn, pointsRec3, args.num_points, device = cuda)
 
         
         ## losses ##
