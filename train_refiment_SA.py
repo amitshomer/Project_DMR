@@ -7,7 +7,7 @@ sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer dis
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 , DeformNet, Refinement
 
-from utils.utils import weights_init, AverageValueMeter, get_edges, prune, final_refined_mesh, samples_random
+from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere, final_refined_mesh, samples_random
 from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
 
 from utils.dataset import ShapeNet
@@ -68,15 +68,8 @@ print('training set', len(dataset.datapath))
 print('testing set', len(dataset_val.datapath))
 len_dataset = len(dataset)
 
-# Create Round Spehere - TODO take ASIS change
-name = 'sphere' + str(args.num_vertices) + '.mat'
-mesh = scipy.io.loadmat('./data/' + name)
-faces = np.array(mesh['f'])
-faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor).to(cuda)
-vertices_sphere = np.array(mesh['v'])
-vertices_sphere = (torch.cuda.FloatTensor(vertices_sphere)).transpose(0, 1).contiguous()
-vertices_sphere = vertices_sphere.contiguous().unsqueeze(0).to(cuda)
-edge_cuda = get_edges(faces)
+# Create Round Spehere 
+edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_vertices, cuda = cuda):
 
 ## Load Models ##
 # Img encoder 

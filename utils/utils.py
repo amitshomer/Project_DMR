@@ -5,6 +5,7 @@ import torch
 import pandas as pd
 from scipy.sparse import coo_matrix
 import utils.utils_SA as utils_sa
+import scipy 
 
 # initialize the weighs of the network for Convolutional layers and batchnorm layers
 class AverageValueMeter(object): # TODO Sapir
@@ -209,6 +210,16 @@ def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
 
     return pointsRec_refined_boundary, selected_pair_all, selected_pair_all_len
 
+def create_round_spehere(num_vertices, cuda = 'cuda:0'):
+    name = 'sphere' + str(num_vertices) + '.mat'
+    mesh = scipy.io.loadmat('./data/' + name)
+    faces = np.array(mesh['f'])
+    faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor).to(cuda)
+    vertices_sphere = np.array(mesh['v'])
+    vertices_sphere = (torch.cuda.FloatTensor(vertices_sphere)).transpose(0, 1).contiguous()
+    vertices_sphere = vertices_sphere.contiguous().unsqueeze(0).to(cuda)
+    edge_cuda = get_edges(faces)
+    return edge_cuda, vertices_sphere, faces_cuda , faces
 
 def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, device='cuda:0'): # TODO Sapir
     error = torch.pow(error, 2) # erorr for each 10000 sampeled faces

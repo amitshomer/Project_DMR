@@ -9,7 +9,7 @@ sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer dis
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
 
-from utils.utils import weights_init, AverageValueMeter, get_edges
+from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere
 from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss_stage1, get_normal_loss # TODO - change names 
 
 from utils.dataset import ShapeNet
@@ -21,25 +21,6 @@ import numpy as np
 
 random.seed(6185)
 torch.manual_seed(6185)
-
-
-
-# import random
-# import numpy as np
-# import torch
-# import torch.argsim as argsim
-# import sys
-# sys.path.append('./auxiliary/')
-# from dataset import *
-# from model import *
-# from utils import *
-# from ply import *
-# import os
-# import json
-# import datetime
-
-# random.seed(args.manualSeed)
-# torch.manual_seed(args.manualSeed)
 
 
 parser = argparse.ArgumentParser()
@@ -66,8 +47,6 @@ if not os.path.exists(dir_name):
     os.mkdir(dir_name)
 
 logname = os.path.join(dir_name, 'log.txt')
-# blue = lambda x: '\033[94m' + x + '\033[0m'
-# print("Random Seed: ", args.manualSeed)
 
 
 dataset = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=True, class_choice='chair')
@@ -81,16 +60,8 @@ print('training set', len(dataset.datapath))
 print('testing set', len(dataset_val.datapath))
 len_dataset = len(dataset)
 
-# Create Round Spehere - TODO take ASIS change
-name = 'sphere' + str(args.num_vertices) + '.mat'
-mesh = scipy.io.loadmat('./data/' + name)
-faces = np.array(mesh['f'])
-faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor)
-vertices_sphere = np.array(mesh['v'])
-vertices_sphere = (torch.cuda.FloatTensor(vertices_sphere)).transpose(0, 1).contiguous()
-vertices_sphere = vertices_sphere.contiguous().unsqueeze(0)
-edge_cuda = get_edges(faces) # TODO- maybe edit this functuion 
-parameters = smoothness_loss_parameters(faces) # TODO - check what this thing doing 
+edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_vertices, cuda = 'cuda:0'):
+parameters = smoothness_loss_parameters(faces)
 
 ## Load Models ##
 # network = Pretrain(num_points=args.num_points)

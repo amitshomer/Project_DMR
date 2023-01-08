@@ -148,12 +148,11 @@ for i, data in enumerate(dataloader_val, 0):
         pointsRec3_boundary, displace_loss, selected_pair_all, selected_pair_all_len = refinement(points = pointsRec2, img_featrue = feature_img, faces_cuda_bn = faces_cuda_bn2 )
         pointsRec3 = final_refined_mesh(selected_pair_all, selected_pair_all_len, pointsRec3_boundary, pointsRec2, batch_size = img.shape[0])
         # pointsRec3_samples, _ = samples_random(faces_cuda_bn, pointsRec3, args.num_points, device = cuda)
-       
+
         triangles_c1 = faces_cuda_bn[0].cpu().data.numpy()
         triangles_c2 = faces_cuda_bn2[0].cpu().data.numpy()
-        triangles_c3 = pointsRec3[0].cpu().data.numpy()
-       
-        print(cat, name_fg)
+        triangles_c3 = faces_cuda_bn2[0].cpu().data.numpy()
+        
         # if not os.path.exists(dir_name + "/" +):
         #     os.mkdir(opt.model[:-4])
         #     print('created dir', opt.model[:-4])
