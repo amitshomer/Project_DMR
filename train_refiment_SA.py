@@ -53,8 +53,6 @@ if not os.path.exists(dir_name):
     os.mkdir(dir_name)
 
 logname = os.path.join(dir_name, 'log.txt')
-# blue = lambda x: '\033[94m' + x + '\033[0m'
-# print("Random Seed: ", args.manualSeed)
 
 
 dataset = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=True, class_choice='chair')

@@ -225,12 +225,8 @@ for epoch in range(args.epoch):
             val_CD_curve.append(val_CD_loss.avg)
             val_l2_curve.append(val_l2_loss.avg)
             val_CDs_curve.append(val_CDs_loss.avg)
-    # vis.line(X=np.column_stack((np.arange(len(train_curve)), np.arange(len(val_curve)))),
-    #          Y=np.log(np.column_stack((np.array(train_curve), np.array(val_curve)))),
-    #          win='loss',
-    #          argss=dict(title="loss", legend=["train_curve" , "val_curve"], markersize=2, ), )
 
-    # dump stats in log file
+
     log_table = {
         "train_CD_loss": train_CD_loss.avg,
         "val_CD_loss": val_CD_loss.avg,

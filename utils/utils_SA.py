@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import pandas as pd
 import utils.loss_SA as loss_sa
+from scipy.sparse import coo_matrix
+import scipy 
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -29,26 +31,60 @@ class AverageValueMeter:
         self.avg = self.sum / self.count
 
 
-def get_max(errors, sampled_face_index, fn=5120):
+def get_max_try(errors, sampled_face_index, fn=5120):
     """ 
         Extracts for each face the errors and indices of the sampled points belonging to that face. 
         Returns the maximum error for each face among the sampled points belonging to that face.
+        
+        NOTE This implementation is much slower than the original, therefore, not used.. 
     """
     batch_size = errors.shape[0]
-
     max_errors = []
+    # For each image in batch
     for i in range(batch_size):
         face_errors = errors[i, :]
         face_index = sampled_face_index[i]
-        face_error_max = []
-        for j in range(fn):
-            if face_errors[face_index == j].numel() == 0: # this face wasn't sampled
-                face_error_max.append(0)
-            else:
-                face_error_max.append(face_errors[face_index == j].max())
-        max_errors.append(face_error_max)
-    max_errors = torch.Tensor(max_errors)
-    return max_errors[:,:,None]
+
+        # Get unique sampled faces indices 
+        uni = torch.unique(face_index)
+
+        # Find relevant errors for each sampled face
+        uni_faces_ind = (uni.unsqueeze(1)).repeat(1,face_errors.shape[0])
+        faces_index_repeat = (face_index.unsqueeze(1)).repeat(1,uni_faces_ind.shape[0]).T
+        faces_error_repeat = (face_errors.unsqueeze(1).T).repeat(uni_faces_ind.shape[0],1)
+        mask = faces_index_repeat == uni_faces_ind
+
+        # Find max for each sampled face
+        sf_max_error = torch.zeros_like(faces_error_repeat)
+        sf_max_error[mask] = faces_error_repeat[mask]
+        sf_max_error = sf_max_error.max(1)[0] # Sampled faces max error
+        
+        all_faces_errors = torch.zeros(fn)
+        all_faces_errors[uni]=sf_max_error
+        max_errors.append(all_faces_errors)
+    
+    max_errors = torch.stack(max_errors)
+    return max_errors
+
+
+def get_max(errors, index, fn=5120): 
+    # Was implemented - see get_max_try - acheived same results however a bit slower. 
+    batch_size = errors.shape[0]
+    number = errors.shape[1]
+    b = torch.stack([torch.bincount(x,minlength=fn).cumsum(0) for x in index])
+    b2 = torch.zeros_like(b)
+    b2[:,1:].copy_(b[:,:-1])
+    c = torch.LongTensor(range(number)).expand([batch_size,number])
+    index2 = c-torch.gather(b2, 1, index)
+    max_errors = []
+    for i in range(batch_size):
+        row = index[i]
+        col = index2[i]
+        data = errors[i]
+        coo = coo_matrix((data, (row, col)), shape=(fn, int(b[i].max())))
+        max_errors.append(torch.from_numpy(coo.max(axis=1).toarray()))
+    max_errors = torch.stack(max_errors)
+    return max_errors[:,:,0]
 
 
 def get_edges(faces):
@@ -98,6 +134,7 @@ def find_boundary_edges_try(triangles):
 def get_boundary_try(faces):
     ''' 
         Boundary edges are not shared between faces, meaning there's only one face that include this edge
+        NOTE This implementation is much slower than the original, therefore, not used.. 
     '''
     triangles = faces.cpu().data.numpy()
     triangles = triangles[triangles.sum(1).nonzero()]
@@ -212,6 +249,15 @@ def faces_selection(sampling_number, device, faces_points):
     return faces_index_tensor_sort
 
 
+def faces_selection_try(samples_num, device, faces_points):
+     ''' Select faces to be sampled ''' 
+
+     faces = faces_points.cpu().data.numpy() # [b, n_faces, 3 vertices, 3 coords]
+     random_face_ind = np.sort(np.round(np.random.rand(faces.shape[0], samples_num) * faces.shape[1]), axis=1).astype(int) # rand indx in range (0,1) * num_face
+     faces_index_tensor = (torch.from_numpy(random_face_ind).to(device)).type(torch.cuda.LongTensor)
+
+     return faces_index_tensor
+
 
 def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): 
     """ Random vertices sampleing on given faces """ 
@@ -271,9 +317,10 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
     error = torch.pow(error, 2)
 
     # For each face, get the max error of its samples
-    face_error = get_max(error.cpu(), index.cpu(), faces_number).squeeze(2).to(device)
+    face_error = get_max(error.cpu(), index.cpu(), faces_number).to(device)
 
     # Mark faces to prune a zero point
+    faces_cuda_bn = faces_cuda_bn.clone()
     faces_cuda_bn[face_error > tau] = 0
 
     faces_cuda_set = []
@@ -312,6 +359,7 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
 
 
 def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
+    " Was not implemented"
     selected_pair_all, selected_pair_all_len, boundary_points_all, boundary_points_all_len = [], [], [], []
 
     for edge_bn in torch.arange(0, faces_cuda_bn.shape[0]):
@@ -350,3 +398,14 @@ def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
     pointsRec_refined_boundary = pointsRec_refined_boundary.index_select(0, indices)
 
     return pointsRec_refined_boundary, selected_pair_all, selected_pair_all_len
+
+def create_round_spehere(num_vertices, cuda = 'cuda:0'):
+    name = 'sphere' + str(num_vertices) + '.mat'
+    mesh = scipy.io.loadmat('./data/' + name)
+    faces = np.array(mesh['f'])
+    faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor).to(cuda)
+    vertices_sphere = np.array(mesh['v'])
+    vertices_sphere = (torch.cuda.FloatTensor(vertices_sphere)).transpose(0, 1).contiguous()
+    vertices_sphere = vertices_sphere.contiguous().unsqueeze(0).to(cuda)
+    edge_cuda = get_edges(faces)
+    return edge_cuda, vertices_sphere, faces_cuda , faces

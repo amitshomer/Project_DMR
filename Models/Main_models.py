@@ -5,9 +5,8 @@ import torch.nn.parallel
 import torch.utils.data
 import torch.nn.functional as F
 import Models.resnet as resnet
-from utils.utils import samples_random, get_boundary_points_bn
-from utils.utils import prune as prune_func
-import utils.utils_SA as utils_sa
+from utils.utils_SA import samples_random, get_boundary_points_bn
+from utils.utils_SA import prune as prune_func
 
 import numpy as np
 

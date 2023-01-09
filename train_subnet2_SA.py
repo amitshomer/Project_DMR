@@ -9,14 +9,14 @@ sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer dis
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
 
-from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere
-from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
+from utils.utils_SA import weights_init, AverageValueMeter, get_edges
+from utils.utils_SA import create_round_spehere
+from utils.loss_SA import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
 
 from utils.dataset import ShapeNet
 import random, os, json, sys
 import torch
 import torch.optim as optim
-import scipy 
 import numpy as np
 
 torch.cuda.empty_cache()
@@ -68,7 +68,7 @@ print('testing set', len(dataset_val.datapath))
 len_dataset = len(dataset)
 
 # Create Round Spehere 
-edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_vertices, cuda = 'cuda:0'):
+edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_vertices, cuda = 'cuda:0')
 parameters = smoothness_loss_parameters(faces)
 
 
@@ -111,16 +111,11 @@ val_CDs_stage2_loss = AverageValueMeter()
 with open(logname, 'a') as f:  # open and append
     f.write(str(subnet2) + '\n')
 
-# initialize learning curve on visdom, and color for each primitive in visdom display
-# train_CD_curve = []
-# val_CD_curve = []
 train_l2_curve = []
 val_l2_curve = []
 train_CDs_stage2_curve = []
 val_CDs_stage2_curve = []
 
-# train_CDs_curve = []
-# val_CDs_curve = []
 
 distChamfer = dist_chamfer_3D.chamfer_3DDist()
 
@@ -259,12 +254,8 @@ for epoch in range(args.epoch):
                 
             val_l2_curve.append(val_l2_loss.avg)
             val_CDs_stage2_curve.append(val_CDs_stage2_loss.avg)
-    # vis.line(X=np.column_stack((np.arange(len(train_curve)), np.arange(len(val_curve)))),
-    #          Y=np.log(np.column_stack((np.array(train_curve), np.array(val_curve)))),
-    #          win='loss',
-    #          argss=dict(title="loss", legend=["train_curve" , "val_curve"], markersize=2, ), )
 
-    # dump stats in log file
+
     log_table = {
         "train_l2_loss": train_l2_loss.avg,
         "train_cds_stage2": train_CDs_stage2_loss.avg,
