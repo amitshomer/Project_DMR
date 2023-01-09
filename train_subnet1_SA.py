@@ -9,8 +9,8 @@ sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer dis
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
 
-from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere
-from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss_stage1, get_normal_loss # TODO - change names 
+from utils.utils_SA import weights_init, AverageValueMeter, get_edges, create_round_spehere
+from utils.loss_SA import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss_stage1, get_normal_loss # TODO - change names 
 
 from utils.dataset import ShapeNet
 import random, os, json, sys
