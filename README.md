@@ -1,6 +1,7 @@
 # DMR Project
 Sapir Kontente and Amit Shomer
 
+
 This is Implementation of the paper [Deep Mesh Reconstruction from Single RGB Images via Topology Modification Networks](https://arxiv.org/abs/1909.00321). 
 
 
@@ -12,7 +13,7 @@ After clone the repo install the environment:
 conda env create -f dmr_project.yml
 ```
 
-Now you should instal the following [Chamfer distance] (https://github.com/ThibaultGROUEIX/ChamferDistancePytorch) or install other implementation and change the code. 
+Install the following [Chamfer distance](https://github.com/ThibaultGROUEIX/ChamferDistancePytorch) or install other implementation and change the code. 
 Follow the authors instructions to install the Chmafer distance correctly. 
 The git should be in the following path : ``` Project_DMR/ChamferDistancePytorch```
 
@@ -41,3 +42,7 @@ The following command will train all sub-models one after the other
 ```
 bash train.sh
 ```
+
+
+## Acknowledgment
+Some of the code released by the authors in the [original repo](https://github.com/jnypan/TMNet) is been used. We thank the authors for sharing their code.
