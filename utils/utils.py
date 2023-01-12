@@ -1,15 +1,20 @@
-import os
-import random
 import numpy as np
 import torch
 import pandas as pd
+import utils.loss_SA as loss_sa
 from scipy.sparse import coo_matrix
-import utils.utils_SA as utils_sa
 import scipy 
 
-# initialize the weighs of the network for Convolutional layers and batchnorm layers
-class AverageValueMeter(object): # TODO Sapir
-    """Computes and stores the average and current value"""
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        m.weight.data.normal_(0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        m.weight.data.normal_(1.0, 0.02)
+        m.bias.data.fill_(0)
+
+
+class AverageValueMeter:
     def __init__(self):
         self.reset()
 
@@ -26,16 +31,44 @@ class AverageValueMeter(object): # TODO Sapir
         self.avg = self.sum / self.count
 
 
-def weights_init(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        m.weight.data.normal_(0.0, 0.02)
-    elif classname.find('BatchNorm') != -1:
-        m.weight.data.normal_(1.0, 0.02)
-        m.bias.data.fill_(0)
+def get_max_try(errors, sampled_face_index, fn=5120):
+    """ 
+        Extracts for each face the errors and indices of the sampled points belonging to that face. 
+        Returns the maximum error for each face among the sampled points belonging to that face.
+        
+        NOTE This implementation is much slower than the original, therefore, not used.. 
+    """
+    batch_size = errors.shape[0]
+    max_errors = []
+    # For each image in batch
+    for i in range(batch_size):
+        face_errors = errors[i, :]
+        face_index = sampled_face_index[i]
+
+        # Get unique sampled faces indices 
+        uni = torch.unique(face_index)
+
+        # Find relevant errors for each sampled face
+        uni_faces_ind = (uni.unsqueeze(1)).repeat(1,face_errors.shape[0])
+        faces_index_repeat = (face_index.unsqueeze(1)).repeat(1,uni_faces_ind.shape[0]).T
+        faces_error_repeat = (face_errors.unsqueeze(1).T).repeat(uni_faces_ind.shape[0],1)
+        mask = faces_index_repeat == uni_faces_ind
+
+        # Find max for each sampled face
+        sf_max_error = torch.zeros_like(faces_error_repeat)
+        sf_max_error[mask] = faces_error_repeat[mask]
+        sf_max_error = sf_max_error.max(1)[0] # Sampled faces max error
+        
+        all_faces_errors = torch.zeros(fn)
+        all_faces_errors[uni]=sf_max_error
+        max_errors.append(all_faces_errors)
+    
+    max_errors = torch.stack(max_errors)
+    return max_errors
 
 
-def get_max(errors, index, fn=5120): # TODO Sapir
+def get_max(errors, index, fn=5120): 
+    # Was implemented - see get_max_try - acheived same results however a bit slower. 
     batch_size = errors.shape[0]
     number = errors.shape[1]
     b = torch.stack([torch.bincount(x,minlength=fn).cumsum(0) for x in index])
@@ -51,59 +84,183 @@ def get_max(errors, index, fn=5120): # TODO Sapir
         coo = coo_matrix((data, (row, col)), shape=(fn, int(b[i].max())))
         max_errors.append(torch.from_numpy(coo.max(axis=1).toarray()))
     max_errors = torch.stack(max_errors)
-    return max_errors
+    return max_errors[:,:,0]
 
 
 def get_edges(faces):
+    ''' Return unique edge list'''
     edge = []
     for i, j in enumerate(faces):
         edge.append(j[:2])
         edge.append(j[1:])
         edge.append(j[[0, 2]])
     edge = np.array(edge)
+
+    # Represent each edge with a scalar
     edge_im = edge[:, 0] * edge[:, 1] + (edge[:, 0] + edge[:, 1]) * 1j
-    unique = np.unique(edge_im, return_index=True)[1]
-    edge_unique = edge[unique]
+    
+    # Remove repetitions (unique scalars)
+    edge_unique = edge[ np.unique(edge_im, return_index=True)[1]]
+    
     edge_cuda = (torch.from_numpy(edge_unique).type(torch.cuda.LongTensor)).detach()
     return edge_cuda
 
 
-def get_boundary(faces):
-    vertices_number = faces.max().item() + 1 # Vertices amount
-    
-    triangles_new = faces.cpu().data.numpy()
-    triangles_new = triangles_new[triangles_new.sum(1).nonzero()] # TODO not sure? 
-
-    edges = np.concatenate((triangles_new[:, :2], triangles_new[:, [0, 2]], triangles_new[:, 1:]), 0) # array of edges
+def find_boundary_edges_try(triangles):
+    # Extract edge vertices from faces
+    edges = np.concatenate((triangles[:, :2], triangles[:, [0, 2]], triangles[:, 1:]), 0) # array of edges
     edges.sort(1)
-    edges_unrolled = edges[:, 0] * vertices_number + edges[:, 1]  # edges extended to 1d, represent edges as scaler
-    # Find unique edges
-    all_index = np.arange(0, edges_unrolled.shape[0]) # 14988 edges with replications 
-    unique_index = np.unique(edges_unrolled, return_index=True)[1] # only 7543 unique edges 
-    repeated_index = np.array(list(set(all_index).difference(set(unique_index)))) 
-    unique_value = edges_unrolled[unique_index]
-    repeated_value = edges_unrolled[repeated_index]
-    # 
-    boundary_value = np.array(list(set(unique_value).difference(set(repeated_value)))) # set - sequences of unique elements, difference - find the redunent for two sets 
-    boundary_edge1 = np.array(np.floor(boundary_value / vertices_number))
-    boundary_edge2 = np.array(boundary_value % vertices_number)
-    boundary_edge = np.stack((boundary_edge1, boundary_edge2), 1)
-    boundary_point = np.unique(np.concatenate((boundary_edge1, boundary_edge2), 0))
+    
+    # v0s and v1s are the first and the second vertices that define an edge 
+    v0s, v1s = np.array([v[0] for v in edges], 'int32'), np.array([v[1] for v in edges], 'int32')
+    boundary_edge = []
+
+    triangles_copy = np.copy(triangles)
+    # Iterate over each edge 
+    for v0, v1 in zip(v0s, v1s):
+        # Find faces that contain this edge
+        mask1 = loss_sa.get_v0v1_faces(triangles_copy, v0, v1)
+        mask2 = loss_sa.get_v0v1_faces(triangles_copy, v1, v0)
+        mask = np.logical_or(mask1, mask2)
+        
+        face_vertices = triangles_copy[mask]
+        
+        if face_vertices.shape[0] == 1:
+            boundary_edge.append((v0, v1))
+    
+    return np.array(boundary_edge)
+
+
+def get_boundary_try(faces):
+    ''' 
+        Boundary edges are not shared between faces, meaning there's only one face that include this edge
+        NOTE This implementation is much slower than the original, therefore, not used.. 
+    '''
+    triangles = faces.cpu().data.numpy()
+    triangles = triangles[triangles.sum(1).nonzero()]
+
+    # Get boundary edges
+    boundary_edge = find_boundary_edges_try(triangles)
+    boundary_edge = np.array(sorted(boundary_edge, key=lambda x: (x[0], x[1])))
+
+    # For each boundary vertex, return its two edges 
     boundary_edge_inverse = boundary_edge[:, [1, 0]]
     boundary_edge_all = np.concatenate((boundary_edge, boundary_edge_inverse), 0)
     boundary_edge_all = boundary_edge_all[np.argsort(boundary_edge_all[:, 0])]
+    
+    # Vertices 
+    boundary_vertices = np.unique(boundary_edge)
+    boundary_vertices = torch.from_numpy(boundary_vertices).type(torch.cuda.LongTensor)
 
+    # Return boundary vertices  
     selected_point = np.where(boundary_edge_all[:, 0] == np.concatenate((boundary_edge_all[1:, 0],
                                                                          boundary_edge_all[:1, 0]), 0))
-    selected_pair = np.concatenate((boundary_edge_all[selected_point[0]],
+    boundary_pair = np.concatenate((boundary_edge_all[selected_point[0]],
                                     boundary_edge_all[selected_point[0] + 1][:, 1:]), 1)
-    selected_pair = torch.from_numpy(selected_pair).type(torch.cuda.LongTensor)
-    boundary_point = torch.from_numpy(boundary_point).type(torch.cuda.LongTensor)
+    boundary_pair = torch.from_numpy(boundary_pair).type(torch.cuda.LongTensor)
+    
+    return boundary_pair, boundary_vertices, boundary_edge
 
-    return selected_pair, boundary_point, boundary_edge
+
+def get_boundary(faces):
+    ''' 
+        Boundary edges are not shared between faces, meaning there's only one face that include this edge
+        NOTE alternative implementation is too slow, using the original
+    '''
+
+    # Face = v1, v2, v3
+    vertices_num = faces.max().item() + 1
+    faces_np = faces.cpu().data.numpy()
+    faces_np = faces_np[faces_np.sum(1).nonzero()]
+
+    # All Edges - each faces and its edges, shared edges listed twice 
+    edge1 = faces_np[:, :2] # v2-->v1 
+    edge2 = faces_np[:, [0, 2]] # v3-->v1
+    edge3 = faces_np[:, 1:] # v3-->v2
+    face_edges = np.concatenate((edge1, edge2, edge3), 0)
+    face_edges.sort(1)
+
+    # Each edge is identified with a scale - (V1*2562+V2)
+    face_edges_identifier = face_edges[:, 0] * vertices_num + face_edges[:, 1]
+
+    # Find boundary edge list - edges that appear only once in the edges list
+    edges_identifier_ind = np.arange(0, face_edges_identifier.shape[0])
+    unique_edges_identifier_ind = np.unique(face_edges_identifier, return_index=True)[1]
+    shared_edges_identifier_ind = np.array(list(set(edges_identifier_ind).difference(set(unique_edges_identifier_ind)))) # All edges without unique
+    
+    unique_edges_identifier = face_edges_identifier[unique_edges_identifier_ind]
+    shared_edges_identifier = face_edges_identifier[shared_edges_identifier_ind]
+    boundary_edges_identifier = np.array(list(set(unique_edges_identifier).difference(set(shared_edges_identifier)))) # Boundary = Unique without shared
+    
+    # Return to vertices depcitor for each edge  
+    boundary_V1 = np.array(np.floor(boundary_edges_identifier / vertices_num))
+    boundary_V2 = np.array(boundary_edges_identifier % vertices_num)
+    boundary_edge = np.stack((boundary_V1, boundary_V2), 1) 
+
+    boundary_vertices = np.unique(np.concatenate((boundary_V1, boundary_V2), 0))
+    boundary_vertices = torch.from_numpy(boundary_vertices).type(torch.cuda.LongTensor)
+
+    # For each boundary vertex, return its two edges 
+    boundary_edge_inverse = boundary_edge[:, [1, 0]]
+    boundary_edge_all = np.concatenate((boundary_edge, boundary_edge_inverse), 0)
+    boundary_edge_all = boundary_edge_all[np.argsort(boundary_edge_all[:, 0])]
+    
+    # Return boundary vertices  
+    selected_point = np.where(boundary_edge_all[:, 0] == np.concatenate((boundary_edge_all[1:, 0],
+                                                                         boundary_edge_all[:1, 0]), 0))
+    boundary_pair = np.concatenate((boundary_edge_all[selected_point[0]],
+                                    boundary_edge_all[selected_point[0] + 1][:, 1:]), 1)
+    boundary_pair = torch.from_numpy(boundary_pair).type(torch.cuda.LongTensor)
+    
+    return boundary_pair, boundary_vertices, boundary_edge
 
 
-def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): # TODO Sapir
+def faces_selection(sampling_number, device, faces_points):
+    ''' Select faces to be sampled by normal size ''' 
+
+    faces = faces_points.cpu().data.numpy() # [b, n_faces, 3 vertices, 3 coords]
+    v1, v2, v3 = faces[:, :, 0], faces[:, :, 1], faces[:, :, 2] # [b, n_faces, 3 coords]
+    
+    # Calculate cross-product triangles's vectors
+    normal = np.cross(v2 - v1, v3 - v1) 
+    # Calculate (x^2 + y^2 + z^2)^0.5 for each face
+    normal_size = np.sqrt(np.sum(normal ** 2, axis=-1)) # [b, n_faces]
+    # Calculate the sum of normals for each batch
+    normal_sum = np.sum(normal_size, axis=1) # [b]
+    # Calculate the cumulative sum of normals for each batch
+    normal_cum = np.cumsum(normal_size, axis=1) # [b, n_faces]
+    # Generate random numbers between 0 and 1
+    faces_pick = normal_sum[:, np.newaxis] * np.random.random(sampling_number)[np.newaxis, :]
+
+    # Select faces using the cumulative sum of normals
+    faces_index = []
+    for i in range(normal_cum.shape[0]):
+        # Find the index of the selected faces using the cumulative sum of normals
+        index = np.searchsorted(normal_cum[i], faces_pick[i])
+        # Append the selected indices to the list
+        faces_index.append(index)
+
+    # Clip the values to the range [0, n_faces - 1]
+    faces_index = np.clip(np.array(faces_index), 0, normal_cum.shape[1] - 1)
+    faces_index_tensor = torch.from_numpy(faces_index).to(device).type(torch.cuda.LongTensor).to(device)
+    
+    # Sort the indices in ascending order
+    faces_index_tensor_sort = faces_index_tensor.sort(1)[0]
+    return faces_index_tensor_sort
+
+
+def faces_selection_try(samples_num, device, faces_points):
+     ''' Select faces to be sampled ''' 
+
+     faces = faces_points.cpu().data.numpy() # [b, n_faces, 3 vertices, 3 coords]
+     random_face_ind = np.sort(np.round(np.random.rand(faces.shape[0], samples_num) * faces.shape[1]), axis=1).astype(int) # rand indx in range (0,1) * num_face
+     faces_index_tensor = (torch.from_numpy(random_face_ind).to(device)).type(torch.cuda.LongTensor)
+
+     return faces_index_tensor
+
+
+def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): 
+    """ Random vertices sampleing on given faces """ 
 
     if len(faces_cuda.size())==2:
         faces_points = pointsRec.index_select(1, faces_cuda.contiguous().view(-1)).contiguous().\
@@ -117,40 +274,24 @@ def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): # TOD
     else:
         faces_points = None
 
-    faces_points_np = faces_points.cpu().data.numpy() # (24, 5120, 3, 3)
-    a = faces_points_np[:, :, 0] # (24, 5120, 3)
-    b = faces_points_np[:, :, 1] # (24, 5120, 3)
-    c = faces_points_np[:, :, 2] # (24, 5120, 3)
+    # Select triangles to be sampled
+    faces_index_sample = faces_selection(sampled_number, device, faces_points)
 
-    cross = np.cross(b - a, c - a) # (24, 5120, 3)
-    area = np.sqrt(cross[:, :, 0] ** 2 + cross[:, :, 1] ** 2 + cross[:, :, 2] ** 2) # (24, 5120)
-    area_sum = np.sum(area, axis=1) # (24,)
-    area_cum = np.cumsum(area, axis=1) # (24, 5120)
-    faces_pick = area_sum[:, np.newaxis] * np.random.random(sampled_number)[np.newaxis, :]  # 32*7500. 10000 samples per image - (24,10000) TODO: why 32*7500?
-
-    faces_index = []
-    for i in range(faces_pick.shape[0]): # for each image in the batch, search the indice to add the samples insize the cumsum 
-        faces_index.append(np.searchsorted(area_cum[i], faces_pick[i]))
-
-    faces_index = np.array(faces_index)  # 32*7500 TODO: why 32*7500?. 24*10000
-    faces_index = np.clip(faces_index,0,area_cum.shape[1]-1) 
-    faces_index_tensor = (torch.from_numpy(faces_index).cuda()).type(torch.cuda.LongTensor).to(device)
-    faces_index_tensor_sort = faces_index_tensor.sort(1)[0]
-
+    # Select the vertices of the sampled triangles
     tri_origins = faces_points[:, :, 0].clone()
     tri_vectors = faces_points[:, :, 1:].clone()
     tri_vectors = tri_vectors - tri_origins.unsqueeze(2).expand_as(tri_vectors)
 
-    tri_origins = tri_origins.index_select(1, faces_index_tensor_sort.view(-1)).view(
-        tri_origins.size()[0] * faces_index_tensor_sort.size()[0],
-        faces_index_tensor_sort.size()[1], tri_origins.size()[2])
-    tri_vectors = tri_vectors.index_select(1, faces_index_tensor_sort.view(-1)).view(
-        tri_vectors.size()[0] * faces_index_tensor_sort.size()[0],
-        faces_index_tensor_sort.size()[1], tri_vectors.size()[2], tri_vectors.size()[3])
+    tri_origins = tri_origins.index_select(1, faces_index_sample.view(-1)).view(
+        tri_origins.size()[0] * faces_index_sample.size()[0],
+        faces_index_sample.size()[1], tri_origins.size()[2])
+    tri_vectors = tri_vectors.index_select(1, faces_index_sample.view(-1)).view(
+        tri_vectors.size()[0] * faces_index_sample.size()[0],
+        faces_index_sample.size()[1], tri_vectors.size()[2], tri_vectors.size()[3])
 
     diag_index = (torch.arange(0, pointsRec.size()[0]).to(device))
     diag_index=diag_index.type(torch.cuda.LongTensor)
-    diag_index = (1+faces_index_tensor_sort.size(0)) * diag_index
+    diag_index = (1+faces_index_sample.size(0)) * diag_index
 
     tri_origins = tri_origins.index_select(0, diag_index)
     tri_vectors = tri_vectors.index_select(0, diag_index)
@@ -164,17 +305,65 @@ def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): # TOD
     sample_vector = (tri_vectors * random_lenghts).sum(2)
     samples = sample_vector + tri_origins
 
-    return samples, faces_index_tensor_sort
+    return samples, faces_index_sample
+
+
+def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, device='cuda:0'):
+    ''' Remove bounday faces with error larger than tau, unite triangles after pruning and remove open triangles'''
+    # Decrease tau by a constant factor
+    tau = tau / 10.0 
+
+    # Positive error
+    error = torch.pow(error, 2)
+
+    # For each face, get the max error of its samples
+    face_error = get_max(error.cpu(), index.cpu(), faces_number).to(device)
+
+    # Mark faces to prune a zero point
+    faces_cuda_bn = faces_cuda_bn.clone()
+    faces_cuda_bn[face_error > tau] = 0
+
+    faces_cuda_set = []
+    for k in torch.arange(0, error.size(0)):
+        faces_cuda = faces_cuda_bn[k]
+        
+        # Get boundary points
+        _, _, boundary_edge = get_boundary(faces_cuda)
+        boundary_edge_point = boundary_edge.astype(np.int64).reshape(-1)
+
+        # Remove vertices that have more than 2 edges -  unite triangles 
+        counts = pd.value_counts(boundary_edge_point)
+        toremove_point = torch.from_numpy(np.array(counts[counts > 2].index)).to(device)
+        faces_cuda_expand = faces_cuda.unsqueeze(2).expand(faces_cuda.shape[0], faces_cuda.shape[1],
+                                                           toremove_point.shape[0])
+        toremove_point_expand = toremove_point.unsqueeze(0).unsqueeze(0).\
+            expand(faces_cuda.shape[0],faces_cuda.shape[1],toremove_point.shape[0])
+        toremove_index = ((toremove_point_expand == faces_cuda_expand).sum(2).sum(1)) != 0
+        faces_cuda[toremove_index] = 0
+        triangles = faces_cuda.cpu().data.numpy()
+
+        # Remove vertices that have 1 edge - open triangles
+        v = pd.value_counts(triangles.reshape(-1))
+        v = v[v == 1].index
+        for vi in v:
+            if np.argwhere(triangles == vi).shape[0] == 0:
+                continue
+            triangles[np.argwhere(triangles == vi)[0][0]] = 0
+
+        # Append pruned triangles to list
+        faces_cuda_set.append(torch.from_numpy(triangles).to(device).unsqueeze(0))
+
+    # Concatenate pruned triangles into a single tensor
+    faces_cuda_bn = torch.cat(faces_cuda_set, 0)
+    return faces_cuda_bn
 
 
 def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
-    selected_pair_all = []
-    selected_pair_all_len = []
-    boundary_points_all = []
-    boundary_points_all_len = []
+    " Was not implemented"
+    selected_pair_all, selected_pair_all_len, boundary_points_all, boundary_points_all_len = [], [], [], []
 
-    for bn in torch.arange(0, faces_cuda_bn.shape[0]):
-        faces_each = faces_cuda_bn[bn]
+    for edge_bn in torch.arange(0, faces_cuda_bn.shape[0]):
+        faces_each = faces_cuda_bn[edge_bn]
         selected_pair, boundary_point, _ = get_boundary(faces_each)
         #selected_pair_sa, boundary_point_sa, aa_sa = utils_sa.get_boundary(faces_each.clone())
         #assert ((selected_pair != selected_pair_sa).sum()==0)
@@ -220,58 +409,6 @@ def create_round_spehere(num_vertices, cuda = 'cuda:0'):
     vertices_sphere = vertices_sphere.contiguous().unsqueeze(0).to(cuda)
     edge_cuda = get_edges(faces)
     return edge_cuda, vertices_sphere, faces_cuda , faces
-
-def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, device='cuda:0'): # TODO Sapir
-    error = torch.pow(error, 2) # erorr for each 10000 sampeled faces
-    if not pool == 'sum': # decrease by factor
-        tau = tau / 10.0
-    ones = (torch.ones(1).to(device)).expand_as(error).type(torch.cuda.FloatTensor)
-    zeros = (torch.Tensor(error.size(0) * faces_cuda_bn.size(1)).fill_(0)).to(device)
-    index_1d = (index + (torch.arange(0, error.size(0)).unsqueeze(1).
-                         expand_as(index).to(device) * faces_cuda_bn.size(1)).type(torch.cuda.LongTensor)).view(-1)
-    face_error = zeros.index_add_(0, index_1d, error.view(-1)).view(error.size(0), faces_cuda_bn.size(1))
-    face_count = zeros.index_add_(0, index_1d, ones.view(-1)).view(error.size(0), faces_cuda_bn.size(1))
-    faces_cuda_bn = faces_cuda_bn.clone()
-
-    if pool == 'mean': # normalize
-        face_error = face_error / (face_count + 1e-12) 
-    elif pool == 'max': # max value
-        #face_error_sa = utils_sa.get_max(error.clone().cpu(), index.clone().cpu(), faces_number)
-        face_error = get_max(error.cpu(), index.cpu(), faces_number)
-        #assert ((face_error != face_error_sa).sum()==0)
-        face_error = face_error.squeeze(2).to(device) 
-    elif pool == 'sum': # the same
-        face_error = face_error
-    faces_cuda_bn[face_error > tau] = 0 # take only the faces with the small erorr
-
-    faces_cuda_set = []
-    for k in torch.arange(0, error.size(0)): # for each image in batch 
-        faces_cuda = faces_cuda_bn[k]
-        _, _, boundary_edge = get_boundary(faces_cuda) # get boundary edges 
-        #, _, boundary_edge_sa = utils_sa.get_boundary(faces_cuda.clone())
-        #assert ((boundary_edge != boundary_edge_sa).sum() == 0)
-        boundary_edge_point = boundary_edge.astype(np.int64).reshape(-1) #get all vertices
-        counts = pd.value_counts(boundary_edge_point) # count for each vertices how many times it apears
-        toremove_point = torch.from_numpy(np.array(counts[counts > 2].index)).to(device) # remove vertices that apear more then two times (two edges from each vertex)
-        faces_cuda_expand = faces_cuda.unsqueeze(2).expand(faces_cuda.shape[0], faces_cuda.shape[1],
-                                                           toremove_point.shape[0])
-        toremove_point_expand = toremove_point.unsqueeze(0).unsqueeze(0).\
-            expand(faces_cuda.shape[0],faces_cuda.shape[1],toremove_point.shape[0])
-        toremove_index = ((toremove_point_expand == faces_cuda_expand).sum(2).sum(1)) != 0 # remove faces
-        faces_cuda[toremove_index] = 0
-        triangles = faces_cuda.cpu().data.numpy()
-
-        v = pd.value_counts(triangles.reshape(-1))
-        v = v[v == 1].index # vertices that apears only once, needs to be removed - open triangles
-        for vi in v:
-            if np.argwhere(triangles == vi).shape[0] == 0:
-                continue
-            triangles[np.argwhere(triangles == vi)[0][0]] = 0
-
-        faces_cuda_set.append(torch.from_numpy(triangles).to(device).unsqueeze(0))
-    faces_cuda_bn = torch.cat(faces_cuda_set, 0)
-
-    return faces_cuda_bn
 
 def final_refined_mesh(selected_pair_all, selected_pair_all_len, pointsRec3_boundary, pointsRec2, batch_size):
     pointsRec3_set = []
