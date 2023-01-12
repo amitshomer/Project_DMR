@@ -28,10 +28,10 @@ Download the following data that the authours released which include the chair c
 Here are the download [links for our model checkpoint](https://drive.google.com/drive/folders/1_Y7jKgiTt3rxpmcuBAmdq6fLEBuM4-FE?usp=share_link) 
 The entire log folder should located as follow : ``` Project_DMR/log```
 
-# Our mesh results 
+# Our selected mesh results 
 Our [mesh results can be found at the following link](https://drive.google.com/drive/folders/1gOPv8FlQ6_IqXQ0pwZkdXrPecgM9uFaN?usp=sharing)
 
-# Test the model 
+# Create all raw mesh results 
 ```
 python plot_mesh.py
 ```
