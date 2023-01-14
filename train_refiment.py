@@ -1,9 +1,7 @@
 from __future__ import print_function
 import argparse
 import sys
-sys.path.insert(1, '/data/ashomer/project/TMNet') # TODO - fix Chamfer distance compile in this folder
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
-sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer distance compile in this folder
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 , DeformNet, Refinement
 
@@ -171,7 +169,7 @@ for epoch in range(args.epoch):
         dist13_samples, dist23_samples, _, _ = distChamfer(points, pointsRec3_samples)
         cds_stage3 = (torch.mean(dist13_samples)) + (torch.mean(dist23_samples))
         
-        # Boundery Loss
+        # boundery
         points_select = pointsRec3.index_select(1, selected_pair_all.view(-1)).\
             view(pointsRec3.size(0) * selected_pair_all.size(0),selected_pair_all.size(1), selected_pair_all.size(2),
                  pointsRec3.size(2))

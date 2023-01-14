@@ -1,16 +1,14 @@
 from __future__ import print_function
 import argparse
 import sys
-sys.path.insert(1, '/data/ashomer/project/TMNet') # TODO - fix Chamfer distance compile in this folder
+# new commit
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
-sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer distance compile in this folder
-# import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
 
-from utils.utils import AverageValueMeter, create_round_spehere
-from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss
+from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere
+from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
 
 from utils.dataset import ShapeNet
 import random, os, json, sys
@@ -51,8 +49,6 @@ if not os.path.exists(dir_name):
     os.mkdir(dir_name)
 
 logname = os.path.join(dir_name, 'log.txt')
-# blue = lambda x: '\033[94m' + x + '\033[0m'
-# print("Random Seed: ", args.manualSeed)
 
 
 dataset = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=True, class_choice='chair')
@@ -137,8 +133,8 @@ for epoch in range(args.epoch):
         optimizer.zero_grad()
         img, points, normals, name, cat = data
         img, normals, points = img.to(cuda), normals.to(cuda), points.to(cuda) 
-        choice = np.random.choice(points.size(1), args.num_vertices, replace=False)
-        points_choice = points[:, choice, :].contiguous()
+        choice = np.random.choice(points.size(1), args.num_vertices, replace=False) # TODO - chagne take asis
+        points_choice = points[:, choice, :].contiguous() # TODO - chagne take asis
         vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
                                                         vertices_sphere.size(2)).contiguous())
         
@@ -159,16 +155,24 @@ for epoch in range(args.epoch):
         # Chamfer distnace 2  
         dist1_samples, dist2_samples, _, _ = distChamfer(points, pointsRec_samples2)
         CDs_loss_stage2 = torch.mean(dist1_samples) + torch.mean(dist2_samples)
-        # L2 Loss 
+        # l2 loss 
         error_GT = torch.sqrt(dist2_samples.detach()[:,random_choice2])
+        #l2_loss_sa = loss_sa.mse_loss(out_error_estimator2.clone(), error_GT.clone().detach())
         l2_loss = mse_loss(out_error_estimator2, error_GT.detach())
-        # Edge Loss
+        #assert ((l2_loss!=l2_loss_sa).sum()==0)
+        # edge loss 
+        #edge_loss_sa = loss_sa.get_edge_loss(pointsRec2.clone(), faces_cuda_bn.clone())
         edge_loss = get_edge_loss(pointsRec2, faces_cuda_bn)
-        # Smoothnes Loss 
+        #assert ((edge_loss!=edge_loss_sa).sum()==0)
+        # smoothnes_loss 
+        #smoothness_loss_sa = loss_sa.get_smoothness_loss(pointsRec2.clone(), parameters, faces_cuda_bn.clone())
         smoothness_loss = get_smoothness_loss(pointsRec2, parameters, faces_cuda_bn)
-        # Normal Loss
+        #assert ((smoothness_loss!=smoothness_loss_sa).sum()==0)
+        # normal loss
+        #faces_cuda_bn = faces_cuda.unsqueeze(0).expand(pointsRec.size(0), faces_cuda.size(0),faces_cuda.size(1))
+        #normal_loss_sa = loss_sa.get_normal_loss(pointsRec2.clone(), faces_cuda_bn.clone(), normals.clone(), idx2.clone())
         normal_loss = get_normal_loss(pointsRec2, faces_cuda_bn, normals, idx2)
-        # Total
+        #assert ((normal_loss!=normal_loss_sa).sum()==0)
         total_loss = CDs_loss_stage2 + l2_loss + 0.05 * edge_loss + (2e-7) * smoothness_loss \
                    + (5e-3) * normal_loss
 
@@ -221,16 +225,17 @@ for epoch in range(args.epoch):
             # Chamfer distnace 2  
             dist1_samples, dist2_samples, _, _ = distChamfer(points, pointsRec_samples2)
             CDs_loss_stage2 = torch.mean(dist1_samples) + torch.mean(dist2_samples)
-            # L2 loss 
+            # l2 loss 
             error_GT = torch.sqrt(dist2_samples.detach()[:,random_choice2])
             l2_loss = mse_loss(out_error_estimator2, error_GT.detach())
-            # Edge loss 
+            # edge loss 
             edge_loss = get_edge_loss(pointsRec2, faces_cuda_bn)
-            # Smoothnes_loss 
+            # smoothnes_loss 
             smoothness_loss = get_smoothness_loss(pointsRec2, parameters, faces_cuda_bn)
-            # Normal loss
+            # normal loss
+            #faces_cuda_bn = faces_cuda.unsqueeze(0).expand(pointsRec.size(0), faces_cuda.size(0),faces_cuda.size(1))
             normal_loss = get_normal_loss(pointsRec2, faces_cuda_bn, normals, idx2)
-            # Total
+
             total_loss = CDs_loss_stage2 + l2_loss + 0.05 * edge_loss + (5e-7) * smoothness_loss \
                     + (1e-3) * normal_loss
             
