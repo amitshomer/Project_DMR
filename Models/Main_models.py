@@ -5,8 +5,8 @@ import torch.nn.parallel
 import torch.utils.data
 import torch.nn.functional as F
 import Models.resnet as resnet
-from utils.utils_SA import samples_random, get_boundary_points_bn
-from utils.utils_SA import prune as prune_func
+from utils.utils import samples_random, get_boundary_points_bn
+from utils.utils import prune as prune_func
 
 import numpy as np
 
@@ -135,25 +135,27 @@ class Subnet1(nn.Module):
             points = points.permute(0,2,1).contiguous()
         img_featrue1 = img_featrue.unsqueeze(2).expand(img_featrue.size(0), img_featrue.size(1), points.size(2)).contiguous()
         x = torch.cat((points, img_featrue1), 1).contiguous()
+        
         # DeformNet 
         pointsRec = self.deformNet1(x)
         pointsRec = pointsRec.permute(0,2,1).contiguous()
+        # Random Sample points on faces
         if prune:
             pointsRec_samples, index_sample = samples_random(faces_cuda, pointsRec.detach(), num_points, device= self.cuda_device)
         else:
             pointsRec_samples, index_sample = samples_random(faces_cuda.detach(), pointsRec, num_points, device= self.cuda_device)
-        # Topology Modification
+        
    
-    
         random_choice = np.random.choice(num_points, num_samples, replace=False)
             
-        if prune:
+        if prune: # Cat featues and sampled points
             img_featrue2 = img_featrue.unsqueeze(2).expand(batch_size, img_featrue.size(1), num_points).contiguous()
             pointsRec_samples_cat = torch.cat((pointsRec_samples.detach().transpose(1, 2), img_featrue2), 1).contiguous()
         else: 
             img_featrue2 = img_featrue.unsqueeze(2).expand(batch_size, img_featrue.size(1), num_samples).contiguous()
             pointsRec_samples_cat = torch.cat((pointsRec_samples.detach()[:,random_choice].transpose(1, 2), img_featrue2), 1).contiguous()
         
+        # Topology Modification - Erorr Estimation & Prune
         out_error_estimator = self.error_estimator(pointsRec_samples_cat).squeeze() ## STOP here
 
         if prune:

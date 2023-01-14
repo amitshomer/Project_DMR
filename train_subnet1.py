@@ -9,8 +9,8 @@ sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer dis
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
 
-from utils.utils_SA import weights_init, AverageValueMeter, get_edges, create_round_spehere
-from utils.loss_SA import get_edge_loss_stage1, smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss_stage1, get_normal_loss # TODO - change names 
+from utils.utils import AverageValueMeter, create_round_spehere
+from utils.loss import get_edge_loss_stage1, smoothness_loss_parameters, mse_loss, get_smoothness_loss_stage1, get_normal_loss
 
 from utils.dataset import ShapeNet
 import random, os, json, sys
@@ -126,10 +126,10 @@ for epoch in range(args.epoch):
 
     for i, data in enumerate(dataloader, 0):
         optimizer.zero_grad()
-        img, points, normals, name, cat = data # img, vertices_ref, faces_ref, _ , _ 
+        img, points, normals, name, cat = data # img, vertices_ref, normals_ref, _ , _ 
         img, normals, points = img.cuda(), normals.cuda(), points.cuda()
-        choice = np.random.choice(points.size(1), args.num_vertices, replace=False) # TODO chagne take asis
-        points_choice = points[:, choice, :].contiguous() # TODO - chagne take asis
+        choice = np.random.choice(points.size(1), args.num_vertices, replace=False) 
+        points_choice = points[:, choice, :].contiguous() 
         vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
                                                         vertices_sphere.size(2)).contiguous()) # Shepre 
         # Encoder Img - Shape Fearures X 
@@ -184,8 +184,8 @@ for epoch in range(args.epoch):
         for i, data in enumerate(dataloader_val, 0):
             img, points, normals, name, cat = data
             img, normals, points = img.cuda(), normals.cuda(), points.cuda()
-            choice = np.random.choice(points.size(1), args.num_vertices, replace=False) #TOOD - chagne take asis
-            points_choice = points[:, choice, :].contiguous() #TOOD - chagne take asis
+            choice = np.random.choice(points.size(1), args.num_vertices, replace=False) 
+            points_choice = points[:, choice, :].contiguous()
             vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
                                                             vertices_sphere.size(2)).contiguous())
             # Encoder Img

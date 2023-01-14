@@ -53,7 +53,7 @@ def smoothness_loss_parameters(faces):
     return v0s, v1s, v2s, v3s
 
 
-def get_orthonormal_basis(vec1, vec2, eps=1e-6):
+def get_weights(vec1, vec2, eps=1e-6):
     # Calculate the L2 norm of vec1 and vec2
     vec1_L2 = torch.sum(vec1.pow(2),dim=2)
     vec2_L2 = torch.sum(vec2.pow(2),dim=2)
@@ -124,8 +124,8 @@ def get_smoothness_loss(vertices, parameters, faces_bn, eps=1e-6):
     v0s, v1s, v2s, v3s = get_neighbours_coords(vs, faces_bn, vertices)
 
     # Get orthonormal basis
-    w1, w1_L1 = get_orthonormal_basis(v1s - v0s, v2s - v0s)
-    w2, w2_L1 = get_orthonormal_basis(v1s - v0s, v3s - v0s)
+    w1, w1_L1 = get_weights(v1s - v0s, v2s - v0s)
+    w2, w2_L1 = get_weights(v1s - v0s, v3s - v0s)
 
     loss = torch.sum(((torch.sum(w1 * w2, dim=2) / (w1_L1 * w2_L1 + eps)) + 1).pow(2))
     loss /= batch_size
@@ -133,16 +133,13 @@ def get_smoothness_loss(vertices, parameters, faces_bn, eps=1e-6):
 
 
 def get_smoothness_loss_stage1(vertices, parameters, eps=1e-6):
-    """ 
-        Define a laplacian coordinate for each vertex
-    """ 
     batch_size = vertices.size(0)
     v0s, v1s, v2s, v3s = [torch.from_numpy(param).type(torch.cuda.LongTensor) for param in parameters]
     v0s, v1s, v2s, v3s = vertices[:, v0s], vertices[:, v1s], vertices[:, v2s], vertices[:, v3s]
     
-    # Get orthonormal basis
-    w1, w1_L1 = get_orthonormal_basis(v1s - v0s, v2s - v0s)
-    w2, w2_L1 = get_orthonormal_basis(v1s - v0s, v3s - v0s)
+    # Get weights
+    w1, w1_L1 = get_weights(v1s - v0s, v2s - v0s)
+    w2, w2_L1 = get_weights(v1s - v0s, v3s - v0s)
 
     loss = torch.sum(((torch.sum(w1 * w2, dim=2) / (w1_L1 * w2_L1 + eps)) + 1).pow(2))
     loss /= batch_size
@@ -236,13 +233,13 @@ def get_avg_edge(edges_vertices):
 
 
 def get_edge_loss_stage1(vertices,edge): 
-    # vertices bs*points_number*3 edge edge_number*2
     vertices_edge = vertices.index_select(1,edge.view(-1)).\
         view(vertices.size(0),edge.size(0),edge.size(1),vertices.size(2))
     vertices_edge_vector = vertices_edge[:,:,0] - vertices_edge[:,:,1]
     vertices_edge_len = torch.pow(vertices_edge_vector.norm(2,2),2)
     edge_loss = torch.mean(vertices_edge_len)
     return edge_loss
+
 
 def get_edge_loss(vertices, x, stage=None):
     """  

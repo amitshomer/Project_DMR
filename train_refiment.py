@@ -7,7 +7,7 @@ sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer dis
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 , DeformNet, Refinement
 
-from utils.utils_SA import weights_init, AverageValueMeter, get_edges, create_round_spehere, final_refined_mesh, samples_random
+from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere, final_refined_mesh, samples_random
 
 from utils.dataset import ShapeNet
 import random, os, json, sys
@@ -171,7 +171,7 @@ for epoch in range(args.epoch):
         dist13_samples, dist23_samples, _, _ = distChamfer(points, pointsRec3_samples)
         cds_stage3 = (torch.mean(dist13_samples)) + (torch.mean(dist23_samples))
         
-        # boundery
+        # Boundery Loss
         points_select = pointsRec3.index_select(1, selected_pair_all.view(-1)).\
             view(pointsRec3.size(0) * selected_pair_all.size(0),selected_pair_all.size(1), selected_pair_all.size(2),
                  pointsRec3.size(2))
