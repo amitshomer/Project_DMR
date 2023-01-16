@@ -1,11 +1,9 @@
 # DMR Project
 Sapir Kontente and Amit Shomer
 
-
 This is Implementation of the paper [Deep Mesh Reconstruction from Single RGB Images via Topology Modification Networks](https://arxiv.org/abs/1909.00321). 
 
-
-
+![teaser](https://github.com/amitshomer/Project_DMR/blob/master/figure.gif)
 # Installation and packges
 
 After clone the repo install the environment:
