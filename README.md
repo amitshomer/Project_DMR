@@ -43,4 +43,4 @@ bash train.sh
 
 
 ## Acknowledgment
-Some of the code released by the authors in the [original repo](https://github.com/jnypan/TMNet) is been used. We thank the authors for sharing their code.
+Some of the code released by the authors in the [original repo](https://github.com/jnypan/TMNet) is been used in this project. We tired to mark in comment every part in the code which taken or modify from the original repo. We thank the authors for sharing their code.
