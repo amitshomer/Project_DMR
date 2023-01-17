@@ -3,11 +3,9 @@
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
-
 from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere
 from utils.loss import get_edge_loss_stage1, smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss_stage1, get_normal_loss # TODO - change names 
 import argparse
-
 from utils.dataset import ShapeNet
 import os
 import json
@@ -22,9 +20,6 @@ parser.add_argument('--workers', type=int, default=8,  help='number of data load
 parser.add_argument('--epoch', type=int, default=420, help='number of epochs to train for')
 parser.add_argument('--num_points', type=int, default=10000, help='number of points for GT')
 parser.add_argument('--num_samples',type=int,default=2500, help='number of samples for error estimation')
-
-parser.add_argument('--super_points', type=int, default=2500,
-                    help='number of input points to pointNet, not used by default')
 parser.add_argument('--dir_name', type=str, default="subnet1", help='')
 parser.add_argument('--lr',type=float,default=1e-3, help='initial learning rate')
 parser.add_argument('--num_vertices', type=int, default=2562, help='number of vertices of the initial sphere')
@@ -34,7 +29,7 @@ parser.add_argument('--device', type=int, default=0, help='GPU device')
 args = parser.parse_args()
 print(args)
 cuda = torch.device('cuda:{}'.format(args.device))
-
+## Logger part ##
 dir_name = os.path.join('./log', args.dir_name)
 if not os.path.exists(dir_name):
     os.mkdir(dir_name)
@@ -50,14 +45,13 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
 dataset_val = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=False, class_choice='chair')
 dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=args.batch_size,
                                               shuffle=False, num_workers=int(args.workers))
-
 len_dataset = len(dataset)
 
 # Create the round mesh spehre 
 edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_vertices, cuda = 'cuda:0')
 parameters = smoothness_loss_parameters(faces)
 
-# Base model
+# Base model - load with weights
 encoder = Base_network()
 model_dict = encoder.state_dict()
 pretrained_dict = {k: v for k, v in torch.load(args.model_path).items() if (k in model_dict)}
@@ -68,13 +62,13 @@ encoder.cuda()
 
 # Subnet1
 subnet1 = Subnet1(cuda= cuda)
-
 model_dict = subnet1.state_dict()
 pretrained_dict = {k: v for k, v in torch.load(args.model_path).items() if (k in model_dict)}
 model_dict.update(pretrained_dict)
 subnet1.load_state_dict(model_dict)
 subnet1.cuda()
 
+# optimizer load
 optimizer = optim.Adam([
     {'params': encoder.parameters()},
     {'params': subnet1.parameters()}
@@ -102,26 +96,22 @@ distChamfer = dist_chamfer_3D.chamfer_3DDist()
 for epoch in range(args.epoch):
     subnet1.train()
     encoder.train()
-    
-    
     # learning rate schedule
     if epoch == 200:
         optimizer.param_groups[0]['lr'] = args.lr/10
     if epoch == 300:
         optimizer.param_groups[0]['lr'] = args.lr/100
-
-
     for i, data in enumerate(dataloader, 0):
         optimizer.zero_grad()
         img, points, normals, name, cat = data # img, vertices_ref, faces_ref, _ , _ 
         img, normals, points = img.cuda(), normals.cuda(), points.cuda()
-        choice = np.random.choice(points.size(1), args.num_vertices, replace=False) # TODO chagne take asis
-        points_choice = points[:, choice, :].contiguous() # TODO - chagne take asis
+        choice = np.random.choice(points.size(1), args.num_vertices, replace=False) 
+        points_choice = points[:, choice, :].contiguous() 
         vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
                                                         vertices_sphere.size(2)).contiguous()) # Shepre 
+        ## Main flow ##
         # Encoder Img - Shape Fearures X 
         feature_img = encoder(img)
-
         # Subnet1 - Mesh Deform (vertices' offset) & Error Estimation
         pointsRec, pointsRec_samples, out_error_estimator, random_choice,_ = subnet1(args= args, img_featrue=feature_img, points=vertices_input, faces_cuda=faces_cuda, num_points= args.num_points, num_samples= args.num_samples, prune=False)
             
@@ -164,7 +154,6 @@ for epoch in range(args.epoch):
     train_l2_loss.reset()
 
     # Validation step
-
     subnet1.eval()
     encoder.eval()
     for item in dataset_val.cat:
@@ -177,9 +166,9 @@ for epoch in range(args.epoch):
             points_choice = points[:, choice, :].contiguous() #TOOD - chagne take asis
             vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
                                                             vertices_sphere.size(2)).contiguous())
+            ## Main flow ##
             # Encoder Img
             feature_img = encoder(img)
-
             #Subnet1
             pointsRec, pointsRec_samples, out_error_estimator, random_choice, _ = subnet1(args= args, img_featrue=feature_img, points=vertices_input, faces_cuda=faces_cuda, num_points= args.num_points, num_samples= args.num_samples, prune=False)
                 

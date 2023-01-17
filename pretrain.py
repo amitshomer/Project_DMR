@@ -38,12 +38,16 @@ parser.add_argument('--lr',type=float,default=1e-3, help='initial learning rate'
 args = parser.parse_args()
 print(args)
 
-
+### logger part ### 
 dir_name = os.path.join('./log', args.dir_name)
 if not os.path.exists(dir_name):
     os.mkdir(dir_name)
 
 logname = os.path.join(dir_name, 'log.txt')
+
+with open(logname, 'a') as f: 
+    f.write(str("network") + '\n')
+
 ## data loader part take from the offical repo
 dataset = ShapeNet(npoints=args.num_points, SVR=True, normal=False, train=True, class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
@@ -51,14 +55,13 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
 dataset_val = ShapeNet(npoints=args.num_points, SVR=True, normal=False, train=False, class_choice='chair')
 dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=args.batch_size,
                                               shuffle=False, num_workers=int(args.workers))
-
 len_dataset = len(dataset)
 
-network = Base_network()
+# Load model
+network = Base_network().cuda() 
 
-network.cuda()  
-
-lr = args.lr
+# optimizer load 
+lr = args.lr 
 optimizer = optim.Adam([
     {'params': network.point_cloud_encoder.parameters()},
     {'params': network.deformNet1.parameters()}
@@ -67,14 +70,11 @@ optimizer = optim.Adam([
 # Averge and prints take from the origianl repo
 train_loss = AverageValueMeter()
 val_loss = AverageValueMeter()
-
-with open(logname, 'a') as f: 
-    f.write(str(network) + '\n')
-
 train_list = []
 val_list = []
+##########
 
-
+#load chamfer loss
 distChamfer = dist_chamfer_3D.chamfer_3DDist()
 
 for epoch in range(args.epoch):
@@ -94,18 +94,18 @@ for epoch in range(args.epoch):
         pointsRec = network(img, points, epoch)
 
         ## losses 
-        dist1, dist2,_,_ = distChamfer(points.transpose(2, 1).contiguous(), pointsRec)  # loss function
+        dist1, dist2,_,_ = distChamfer(points.transpose(2, 1).contiguous(), pointsRec)  
         loss_net = (torch.mean(dist1)) + (torch.mean(dist2))
         loss_net.backward()
         train_loss.update(loss_net.item())
-        optimizer.step()  # gradient update
+        optimizer.step()  
       
         # Averge and prints take from the origianl repo
         print('[%d: %d/%d] train loss:  %f ' % (epoch, i, len_dataset / args.batch_size, loss_net.item()))
 
     train_list.append(train_loss.avg)
 
-    # VALIDATION
+    # validation stage 
     val_loss.reset()
     for item in dataset_val.cat:
         dataset_val.perCatValueMeter[item].reset()
@@ -140,7 +140,7 @@ for epoch in range(args.epoch):
         "lr": lrate,
         "super_points": args.super_points,
     }
-    
+
     print(log_table)
     for item in dataset_val.cat:
         print(item, dataset_val.perCatValueMeter[item].avg)

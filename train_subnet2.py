@@ -1,5 +1,4 @@
 ## Trainer Partially based on the offical Repo of the paper - prints, general method, logger and so. 
-
 import argparse
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 from Models.Main_models import Base_Img_to_Mesh as Base_network
@@ -20,15 +19,11 @@ parser.add_argument('--workers', type=int, default=8,  help='number of data load
 parser.add_argument('--epoch', type=int, default=120, help='number of epochs to train for')
 parser.add_argument('--num_points', type=int, default=10000, help='number of points for GT')
 parser.add_argument('--num_samples',type=int,default=2500, help='number of samples for error estimation')
-
-parser.add_argument('--super_points', type=int, default=2500,
-                    help='number of input points to pointNet, not used by default')
 parser.add_argument('--dir_name', type=str, default="subnet2", help='')
 parser.add_argument('--lr',type=float,default=1e-3, help='initial learning rate')
 parser.add_argument('--num_vertices', type=int, default=2562, help='number of vertices of the initial sphere')
 parser.add_argument('--folder_path', type=str, default='./log/subnet1/', help='model path from the pretrained model')
 parser.add_argument('--tau', type=float, default=0.1)
-
 parser.add_argument('--device', type=int, default=0, help='GPU device')
 
 args = parser.parse_args()
@@ -36,16 +31,13 @@ cuda = torch.device('cuda:{}'.format(args.device))
 
 print(args)
 
-
+## logger ##
 dir_name = os.path.join('./log', args.dir_name)
 if not os.path.exists(dir_name):
     os.mkdir(dir_name)
-
 logname = os.path.join(dir_name, 'log.txt')
-
 with open(logname, 'a') as f:  # open and append
     f.write(str("subnet2") + '\n')
-
 
 ## data loader part take from the offical repo
 dataset = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=True, class_choice='chair')
@@ -54,13 +46,11 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
 dataset_val = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=False, class_choice='chair')
 dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=args.batch_size,
                                               shuffle=False, num_workers=int(args.workers))
-
 len_dataset = len(dataset)
 
 # Create Round Spehere 
 edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_vertices, cuda = 'cuda:0')
 parameters = smoothness_loss_parameters(faces)
-
 
 ## Load Models ##
 # Img encoder 
@@ -87,6 +77,7 @@ model_dict.update(pretrained_dict)
 subnet2.load_state_dict(model_dict)
 subnet2.to(cuda)
 
+#optimizer load
 optimizer = optim.Adam([
     {'params': subnet2.parameters()}
 ], lr=args.lr)
@@ -113,25 +104,25 @@ for epoch in range(args.epoch):
     if epoch == 100:
         optimizer.param_groups[0]['lr'] = args.lr/10
 
-
     for i, data in enumerate(dataloader, 0):
         torch.cuda.empty_cache()
 
         optimizer.zero_grad()
         img, points, normals, name, cat = data
         img, normals, points = img.to(cuda), normals.to(cuda), points.to(cuda) 
-        choice = np.random.choice(points.size(1), args.num_vertices, replace=False) # TODO - chagne take asis
-        points_choice = points[:, choice, :].contiguous() # TODO - chagne take asis
+        choice = np.random.choice(points.size(1), args.num_vertices, replace=False) # Take ASIS origin repo
+        points_choice = points[:, choice, :].contiguous() # Take ASIS origin repo
         vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
                                                         vertices_sphere.size(2)).contiguous())
-        # Encoder Img
-        feature_img = encoder(img)
+        ## main flow ##
 
-        #Subnet1
         with torch.no_grad():
+            # Encoder Img
+            feature_img = encoder(img)
+            #Subnet1
             pointsRec, pointsRec_samples, out_error_estimator, random_choice, faces_cuda_bn = subnet1(args= args, img_featrue=feature_img, points=vertices_input, faces_cuda=faces_cuda, num_points= args.num_points, num_samples= args.num_samples, prune= True)
 
-        #Subnet2
+        #Subnet2 - trained 
         pointsRec2, pointsRec_samples2, out_error_estimator2, random_choice2, _ = subnet2(args= args, img_featrue=feature_img, points=pointsRec, faces_cuda=faces_cuda_bn, num_points= args.num_points, num_samples= args.num_samples, prune= False)
 
         ## losses ##
@@ -141,12 +132,9 @@ for epoch in range(args.epoch):
         CDs_loss_stage2 = torch.mean(dist1_samples) + torch.mean(dist2_samples)
         # l2 loss 
         error_GT = torch.sqrt(dist2_samples.detach()[:,random_choice2])
-        #l2_loss_sa = loss_sa.mse_loss(out_error_estimator2.clone(), error_GT.clone().detach())
         l2_loss = mse_loss(out_error_estimator2, error_GT.detach())
         # edge loss 
-        #edge_loss_sa = loss_sa.get_edge_loss(pointsRec2.clone(), faces_cuda_bn.clone())
         edge_loss = get_edge_loss(pointsRec2, faces_cuda_bn)
-        #assert ((edge_loss!=edge_loss_sa).sum()==0)
         # smoothnes_loss 
         smoothness_loss = get_smoothness_loss(pointsRec2, parameters, faces_cuda_bn)
         # normal loss
@@ -181,22 +169,18 @@ for epoch in range(args.epoch):
             optimizer.zero_grad()
             img, points, normals, name, cat = data
             img, normals, points = img.to(cuda), normals.to(cuda), points.to(cuda)
-            choice = np.random.choice(points.size(1), args.num_vertices, replace=False) #take
-            points_choice = points[:, choice, :].contiguous() #TODO - chagne take asis
+            choice = np.random.choice(points.size(1), args.num_vertices, replace=False) # Take ASIS origin repo
+            points_choice = points[:, choice, :].contiguous() # Take ASIS origin repo
             vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
                                                             vertices_sphere.size(2)).contiguous())
-            
-            
+            ## Main flow ## 
             # Encoder Img
             feature_img = encoder(img)
-
             #Subnet1
             pointsRec, pointsRec_samples, out_error_estimator, random_choice, faces_cuda_bn = subnet1(args= args, img_featrue=feature_img, points=vertices_input, faces_cuda=faces_cuda, num_points= args.num_points, num_samples= args.num_samples, prune= True)
-
             #Subnet2
             pointsRec2, pointsRec_samples2, out_error_estimator2, random_choice2, _ = subnet2(args= args, img_featrue=feature_img, points=pointsRec, faces_cuda=faces_cuda_bn, num_points= args.num_points, num_samples= args.num_samples, prune= False)
                 
-
             ## losses ##
             _, _, _, idx2 = distChamfer(points, pointsRec2)
             # Chamfer distnace 2  
