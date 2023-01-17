@@ -159,20 +159,14 @@ for epoch in range(args.epoch):
         error_GT = torch.sqrt(dist2_samples.detach()[:,random_choice2])
         #l2_loss_sa = loss_sa.mse_loss(out_error_estimator2.clone(), error_GT.clone().detach())
         l2_loss = mse_loss(out_error_estimator2, error_GT.detach())
-        #assert ((l2_loss!=l2_loss_sa).sum()==0)
         # edge loss 
         #edge_loss_sa = loss_sa.get_edge_loss(pointsRec2.clone(), faces_cuda_bn.clone())
         edge_loss = get_edge_loss(pointsRec2, faces_cuda_bn)
         #assert ((edge_loss!=edge_loss_sa).sum()==0)
         # smoothnes_loss 
-        #smoothness_loss_sa = loss_sa.get_smoothness_loss(pointsRec2.clone(), parameters, faces_cuda_bn.clone())
         smoothness_loss = get_smoothness_loss(pointsRec2, parameters, faces_cuda_bn)
-        #assert ((smoothness_loss!=smoothness_loss_sa).sum()==0)
         # normal loss
-        #faces_cuda_bn = faces_cuda.unsqueeze(0).expand(pointsRec.size(0), faces_cuda.size(0),faces_cuda.size(1))
-        #normal_loss_sa = loss_sa.get_normal_loss(pointsRec2.clone(), faces_cuda_bn.clone(), normals.clone(), idx2.clone())
         normal_loss = get_normal_loss(pointsRec2, faces_cuda_bn, normals, idx2)
-        #assert ((normal_loss!=normal_loss_sa).sum()==0)
         total_loss = CDs_loss_stage2 + l2_loss + 0.05 * edge_loss + (2e-7) * smoothness_loss \
                    + (5e-3) * normal_loss
 

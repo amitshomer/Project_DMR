@@ -3,7 +3,8 @@ import torch
 import pandas as pd
 from scipy.sparse import coo_matrix
 import scipy 
-from loss import get_v0v1_faces
+import utils.loss as loss
+
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -36,7 +37,7 @@ def get_max_try(errors, sampled_face_index, fn=5120):
         Extracts for each face the errors and indices of the sampled points belonging to that face. 
         Returns the maximum error for each face among the sampled points belonging to that face.
         
-        NOTE This implementation acheived the same results, however it is much slower than the original, therefore, not used.. 
+        NOTE This implementation is much slower than the original, therefore, not used.. 
     """
     batch_size = errors.shape[0]
     max_errors = []
@@ -119,8 +120,8 @@ def find_boundary_edges_try(triangles):
     # Iterate over each edge 
     for v0, v1 in zip(v0s, v1s):
         # Find faces that contain this edge
-        mask1 = get_v0v1_faces(triangles_copy, v0, v1)
-        mask2 = get_v0v1_faces(triangles_copy, v1, v0)
+        mask1 = loss.get_v0v1_faces(triangles_copy, v0, v1)
+        mask2 = loss.get_v0v1_faces(triangles_copy, v1, v0)
         mask = np.logical_or(mask1, mask2)
         
         face_vertices = triangles_copy[mask]
@@ -134,7 +135,7 @@ def find_boundary_edges_try(triangles):
 def get_boundary_try(faces):
     ''' 
         Boundary edges are not shared between faces, meaning there's only one face that include this edge
-        NOTE This implementation acheived the same results however it is much slower than the original, therefore, not used.. 
+        NOTE This implementation is much slower than the original, therefore, not used.. 
     '''
     triangles = faces.cpu().data.numpy()
     triangles = triangles[triangles.sum(1).nonzero()]
@@ -164,14 +165,14 @@ def get_boundary_try(faces):
 
 def get_boundary(faces):
     ''' 
-        Original Implementation. Boundary edges are not shared between faces, meaning there's only one face that include this edge
-        NOTE alternative implementation (get_boundary_try) is too slow, using the original
+        Boundary edges are not shared between faces, meaning there's only one face that include this edge
+        NOTE alternative implementation is too slow, using the original
     '''
 
     # Face = v1, v2, v3
     vertices_num = faces.max().item() + 1
     faces_np = faces.cpu().data.numpy()
-    faces_np = faces_np[faces_np.sum(1).nonzero()] # Remove Zeros - pruned faces
+    faces_np = faces_np[faces_np.sum(1).nonzero()]
 
     # All Edges - each faces and its edges, shared edges listed twice 
     edge1 = faces_np[:, :2] # v2-->v1 
@@ -260,7 +261,7 @@ def faces_selection_try(samples_num, device, faces_points):
 
 
 def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'): 
-    """ Was not implemented. Random vertices sampleing on given faces """ 
+    """ Random vertices sampleing on given faces """ 
 
     if len(faces_cuda.size())==2:
         faces_points = pointsRec.index_select(1, faces_cuda.contiguous().view(-1)).contiguous().\
@@ -309,7 +310,7 @@ def samples_random(faces_cuda, pointsRec, sampled_number,device='cuda:0'):
 
 
 def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, device='cuda:0'):
-    ''' Remove bounday faces with error larger than tau'''
+    ''' Remove bounday faces with error larger than tau, unite triangles after pruning and remove open triangles'''
     # Decrease tau by a constant factor
     tau = tau / 10.0 
 
@@ -319,9 +320,9 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
     # For each face, get the max error of its samples
     face_error = get_max(error.cpu(), index.cpu(), faces_number).to(device)
 
-    # Mark faces to prune as zero
+    # Mark faces to prune a zero point
     faces_cuda_bn = faces_cuda_bn.clone()
-    faces_cuda_bn[face_error > tau] = 0 # [0,0,0] - pruned face
+    faces_cuda_bn[face_error > tau] = 0
 
     faces_cuda_set = []
     for k in torch.arange(0, error.size(0)):
@@ -331,7 +332,7 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
         _, _, boundary_edge = get_boundary(faces_cuda)
         boundary_edge_point = boundary_edge.astype(np.int64).reshape(-1)
 
-        # 
+        # Remove vertices that have more than 2 edges -  unite triangles 
         counts = pd.value_counts(boundary_edge_point)
         toremove_point = torch.from_numpy(np.array(counts[counts > 2].index)).to(device)
         faces_cuda_expand = faces_cuda.unsqueeze(2).expand(faces_cuda.shape[0], faces_cuda.shape[1],
@@ -342,7 +343,7 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
         faces_cuda[toremove_index] = 0
         triangles = faces_cuda.cpu().data.numpy()
 
-        # Removing Single Occurrence vertex in faces
+        # Remove vertices that have 1 edge - open triangles
         v = pd.value_counts(triangles.reshape(-1))
         v = v[v == 1].index
         for vi in v:
@@ -353,7 +354,7 @@ def prune(faces_cuda_bn, error, tau, index, pool='max', faces_number=5120, devic
         # Append pruned triangles to list
         faces_cuda_set.append(torch.from_numpy(triangles).to(device).unsqueeze(0))
 
-    # Triangles after prune
+    # Concatenate pruned triangles into a single tensor
     faces_cuda_bn = torch.cat(faces_cuda_set, 0)
     return faces_cuda_bn
 
@@ -399,7 +400,6 @@ def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
 
     return pointsRec_refined_boundary, selected_pair_all, selected_pair_all_len
 
-
 def create_round_spehere(num_vertices, cuda = 'cuda:0'):
     name = 'sphere' + str(num_vertices) + '.mat'
     mesh = scipy.io.loadmat('./data/' + name)
@@ -410,7 +410,6 @@ def create_round_spehere(num_vertices, cuda = 'cuda:0'):
     vertices_sphere = vertices_sphere.contiguous().unsqueeze(0).to(cuda)
     edge_cuda = get_edges(faces)
     return edge_cuda, vertices_sphere, faces_cuda , faces
-
 
 def final_refined_mesh(selected_pair_all, selected_pair_all_len, pointsRec3_boundary, pointsRec2, batch_size):
     pointsRec3_set = []
