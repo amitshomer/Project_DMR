@@ -116,6 +116,7 @@ def get_neighbours_coords(vs, faces_bn,vertices):
 
 
 def get_smoothness_loss(vertices, parameters, faces_bn, eps=1e-6):
+    ## Partially baed on the offical Repo of the paper 
     # Convert params to tensors
     batch_size = vertices.size(0)
     v0s, v1s, v2s, v3s = [torch.from_numpy(param).type(torch.cuda.LongTensor) for param in parameters]
@@ -133,6 +134,7 @@ def get_smoothness_loss(vertices, parameters, faces_bn, eps=1e-6):
 
 
 def get_smoothness_loss_stage1(vertices, parameters, eps=1e-6):
+    ## Partially baed on the offical Repo of the paper 
     batch_size = vertices.size(0)
     v0s, v1s, v2s, v3s = [torch.from_numpy(param).type(torch.cuda.LongTensor) for param in parameters]
     v0s, v1s, v2s, v3s = vertices[:, v0s], vertices[:, v1s], vertices[:, v2s], vertices[:, v3s]

@@ -1,3 +1,8 @@
+###########################################
+## dataloader take AS-IS from the offical repo (This is pytorch offical implement)
+## https://github.com/jnypan/TMNet
+###########################################
+
 import torch.nn as nn
 import math
 import torch.utils.model_zoo as model_zoo

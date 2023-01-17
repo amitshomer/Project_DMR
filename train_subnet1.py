@@ -1,23 +1,19 @@
-from __future__ import print_function
-import argparse
+## Trainer Partially based on the offical Repo of the paper - prints, general method, logger and so. 
 
-import sys
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
 
 from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere
 from utils.loss import get_edge_loss_stage1, smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss_stage1, get_normal_loss # TODO - change names 
+import argparse
 
 from utils.dataset import ShapeNet
-import random, os, json, sys
+import os
+import json
 import torch
 import torch.optim as optim
-import scipy 
 import numpy as np
-
-random.seed(6185)
-torch.manual_seed(6185)
 
 
 parser = argparse.ArgumentParser()
@@ -35,7 +31,6 @@ parser.add_argument('--num_vertices', type=int, default=2562, help='number of ve
 parser.add_argument('--model_path', type=str, default='./log/base_weights_run/network.pth', help='model path from the pretrained model')
 parser.add_argument('--device', type=int, default=0, help='GPU device')
 
-# parser.add_argument('--manualSeed', type=int, default=6185)
 args = parser.parse_args()
 print(args)
 cuda = torch.device('cuda:{}'.format(args.device))
@@ -43,10 +38,12 @@ cuda = torch.device('cuda:{}'.format(args.device))
 dir_name = os.path.join('./log', args.dir_name)
 if not os.path.exists(dir_name):
     os.mkdir(dir_name)
-
 logname = os.path.join(dir_name, 'log.txt')
 
+with open(logname, 'a') as f:  # open and append
+    f.write(str("subnet1") + '\n')
 
+## data loader part take from the offical repo
 dataset = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=True, class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
                                          shuffle=True, num_workers=int(args.workers))
@@ -54,15 +51,13 @@ dataset_val = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=Fal
 dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=args.batch_size,
                                               shuffle=False, num_workers=int(args.workers))
 
-print('training set', len(dataset.datapath))
-print('testing set', len(dataset_val.datapath))
 len_dataset = len(dataset)
 
+# Create the round mesh spehre 
 edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_vertices, cuda = 'cuda:0')
 parameters = smoothness_loss_parameters(faces)
 
-## Load Models ##
-# network = Pretrain(num_points=args.num_points)
+# Base model
 encoder = Base_network()
 model_dict = encoder.state_dict()
 pretrained_dict = {k: v for k, v in torch.load(args.model_path).items() if (k in model_dict)}
@@ -85,36 +80,31 @@ optimizer = optim.Adam([
     {'params': subnet1.parameters()}
 ], lr=args.lr)
 
-# meters to record stats on learning
+
+### Averge and prints take from the origianl repo
 train_CD_loss = AverageValueMeter()
 val_CD_loss = AverageValueMeter()
 train_l2_loss = AverageValueMeter()
 val_l2_loss = AverageValueMeter()
 train_CDs_loss = AverageValueMeter()
 val_CDs_loss = AverageValueMeter()
-
-
-with open(logname, 'a') as f:  # open and append
-    f.write(str(subnet1) + '\n')
-
-# initialize learning curve on visdom, and color for each primitive in visdom display
 train_CD_curve = []
 val_CD_curve = []
 train_l2_curve = []
 val_l2_curve = []
 train_CDs_curve = []
 val_CDs_curve = []
+#######
+
+
 distChamfer = dist_chamfer_3D.chamfer_3DDist()
 
 for epoch in range(args.epoch):
-    # TRAIN MODE
-    train_CD_loss.reset()
-    train_CDs_loss.reset()
-    train_l2_loss.reset()
     subnet1.train()
     encoder.train()
-    # learning rate schedule
     
+    
+    # learning rate schedule
     if epoch == 200:
         optimizer.param_groups[0]['lr'] = args.lr/10
     if epoch == 300:
@@ -158,23 +148,25 @@ for epoch in range(args.epoch):
 
         total_loss.backward()
         optimizer.step()  
-        ###### 
+        
+        ### Averge and prints take from the origianl repo
         train_CD_loss.update(CD_loss.item())
         train_CDs_loss.update(CDs_loss.item())
         train_l2_loss.update(l2_loss.item())
         print('[%d: %d/%d] train_cd_loss:  %f , l2_loss: %f' % (epoch, i, len_dataset / args.batch_size,
                                                                      CD_loss.item(),l2_loss.item()))
-    # UPDATE CURVES
+    ### Averge and prints take from the origianl repo
     train_CD_curve.append(train_CD_loss.avg)
     train_CDs_curve.append(train_CDs_loss.avg)
     train_l2_curve.append(train_l2_loss.avg)
+    train_CD_loss.reset()
+    train_CDs_loss.reset()
+    train_l2_loss.reset()
 
-    # VALIDATION
+    # Validation step
+
     subnet1.eval()
     encoder.eval()
-    val_CD_loss.reset()
-    val_CDs_loss.reset()
-    val_l2_loss.reset()
     for item in dataset_val.cat:
         dataset_val.perCatValueMeter[item].reset()
     with torch.no_grad():
@@ -235,6 +227,7 @@ for epoch in range(args.epoch):
         "lr": args.lr,
     }
 
+
     print(log_table)
     for item in dataset_val.cat:
         print(item, dataset_val.perCatValueMeter[item].avg)
@@ -244,3 +237,6 @@ for epoch in range(args.epoch):
  
     torch.save(subnet1.state_dict(), '%s/subnet1.pth' % (dir_name))
     torch.save(encoder.state_dict(), '%s/encoder.pth' % (dir_name))
+    val_CD_loss.reset()
+    val_CDs_loss.reset()
+    val_l2_loss.reset()

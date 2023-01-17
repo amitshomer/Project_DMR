@@ -1,3 +1,7 @@
+###########################################
+## dataloader take AS-IS from the offical repo of the paper 
+## https://github.com/jnypan/TMNet
+###########################################
 from __future__ import print_function
 import torch.utils.data as data
 import os.path
@@ -7,7 +11,6 @@ import numpy as np
 import os
 from PIL import Image
 from utils.utils import *
-#from utils import *
 
 import scipy.io as sio
 import time

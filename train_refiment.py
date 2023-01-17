@@ -1,22 +1,19 @@
-from __future__ import print_function
+## Trainer Partially based on the offical Repo of the paper - prints, general method, logger and so. 
+
 import argparse
-import sys
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 , DeformNet, Refinement
-
 from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere, final_refined_mesh, samples_random
-
 from utils.dataset import ShapeNet
 import random, os, json, sys
 import torch
 import torch.optim as optim
 import scipy 
 import numpy as np
-torch.cuda.empty_cache()
-random.seed(6185)
-torch.manual_seed(6185)
+import argparse
 
+torch.cuda.empty_cache()
 
 
 parser = argparse.ArgumentParser()

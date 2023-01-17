@@ -1,24 +1,18 @@
-from __future__ import print_function
-import argparse
-import sys
-# new commit
-import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
+## Trainer Partially based on the offical Repo of the paper - prints, general method, logger and so. 
 
+import argparse
+import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
-
 from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere
 from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
-
 from utils.dataset import ShapeNet
-import random, os, json, sys
+import os, json
 import torch
 import torch.optim as optim
 import numpy as np
 
 torch.cuda.empty_cache()
-random.seed(777)
-torch.manual_seed(777)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, default=24, help=' batch size')
@@ -37,7 +31,6 @@ parser.add_argument('--tau', type=float, default=0.1)
 
 parser.add_argument('--device', type=int, default=0, help='GPU device')
 
-# parser.add_argument('--manualSeed', type=int, default=6185)
 args = parser.parse_args()
 cuda = torch.device('cuda:{}'.format(args.device))
 
@@ -50,7 +43,11 @@ if not os.path.exists(dir_name):
 
 logname = os.path.join(dir_name, 'log.txt')
 
+with open(logname, 'a') as f:  # open and append
+    f.write(str("subnet2") + '\n')
 
+
+## data loader part take from the offical repo
 dataset = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=True, class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
                                          shuffle=True, num_workers=int(args.workers))
@@ -58,8 +55,6 @@ dataset_val = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=Fal
 dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=args.batch_size,
                                               shuffle=False, num_workers=int(args.workers))
 
-print('training set', len(dataset.datapath))
-print('testing set', len(dataset_val.datapath))
 len_dataset = len(dataset)
 
 # Create Round Spehere 
@@ -96,33 +91,25 @@ optimizer = optim.Adam([
     {'params': subnet2.parameters()}
 ], lr=args.lr)
 
-# meters to record stats on learning
+### Averge and prints take from the origianl repo
 train_l2_loss = AverageValueMeter()
 val_l2_loss = AverageValueMeter()
 train_CDs_stage2_loss = AverageValueMeter()
 val_CDs_stage2_loss = AverageValueMeter()
-
-
-with open(logname, 'a') as f:  # open and append
-    f.write(str(subnet2) + '\n')
-
 train_l2_curve = []
 val_l2_curve = []
 train_CDs_stage2_curve = []
 val_CDs_stage2_curve = []
-
+#######
 
 distChamfer = dist_chamfer_3D.chamfer_3DDist()
 
 for epoch in range(args.epoch):
-    # TRAIN MODE
-    train_CDs_stage2_loss.reset()
-    train_l2_loss.reset()
     subnet1.eval()
     encoder.eval()
     subnet2.train()
-    # learning rate schedule
     
+    # learning rate schedule
     if epoch == 100:
         optimizer.param_groups[0]['lr'] = args.lr/10
 
@@ -137,8 +124,6 @@ for epoch in range(args.epoch):
         points_choice = points[:, choice, :].contiguous() # TODO - chagne take asis
         vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
                                                         vertices_sphere.size(2)).contiguous())
-        
-        
         # Encoder Img
         feature_img = encoder(img)
 
@@ -148,7 +133,6 @@ for epoch in range(args.epoch):
 
         #Subnet2
         pointsRec2, pointsRec_samples2, out_error_estimator2, random_choice2, _ = subnet2(args= args, img_featrue=feature_img, points=pointsRec, faces_cuda=faces_cuda_bn, num_points= args.num_points, num_samples= args.num_samples, prune= False)
-            
 
         ## losses ##
         _, _, _, idx2 = distChamfer(points, pointsRec2)
@@ -180,17 +164,16 @@ for epoch in range(args.epoch):
         print('[%d: %d/%d] train_cd_loss:  %f  / l2_loss: %f' % (epoch, i, len_dataset / args.batch_size,
                                                                  CDs_loss_stage2.item(),l2_loss.item()))
         
-    # UPDATE CURVES
-
     train_l2_curve.append(train_l2_loss.avg)
     train_CDs_stage2_curve.append(train_CDs_stage2_loss.avg)
+    train_CDs_stage2_loss.reset()
+    train_l2_loss.reset()
 
-    # VALIDATION
+    ## eval step
     subnet1.eval()
     subnet2.eval()
     encoder.eval()
-    val_CDs_stage2_loss.reset()
-    val_l2_loss.reset()
+
     for item in dataset_val.cat:
         dataset_val.perCatValueMeter[item].reset()
     with torch.no_grad():
@@ -198,7 +181,7 @@ for epoch in range(args.epoch):
             optimizer.zero_grad()
             img, points, normals, name, cat = data
             img, normals, points = img.to(cuda), normals.to(cuda), points.to(cuda)
-            choice = np.random.choice(points.size(1), args.num_vertices, replace=False) #TODO - chagne take asis
+            choice = np.random.choice(points.size(1), args.num_vertices, replace=False) #take
             points_choice = points[:, choice, :].contiguous() #TODO - chagne take asis
             vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
                                                             vertices_sphere.size(2)).contiguous())
@@ -262,3 +245,5 @@ for epoch in range(args.epoch):
         f.write('json_stats: ' + json.dumps(log_table) + '\n')
  
     torch.save(subnet2.state_dict(), '%s/subnet2.pth' % (dir_name))
+    val_CDs_stage2_loss.reset()
+    val_l2_loss.reset()

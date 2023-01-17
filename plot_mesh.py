@@ -1,20 +1,16 @@
-from __future__ import print_function
-import argparse
+# Generally the plot mesh take from the offical repo and modified to support our models. 
 import sys
-sys.path.insert(1, '/data/ashomer/project/TMNet') # TODO - fix Chamfer distance compile in this folder
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
-sys.path.insert(1, '/data/ashomer/project/Project_DMR') # TODO - fix Chamfer distance compile in this folder
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 , DeformNet, Refinement
 
-from utils.utils import weights_init, AverageValueMeter, get_edges, prune, final_refined_mesh, samples_random
+from utils.utils import weights_init, AverageValueMeter, get_edges, prune, final_refined_mesh, samples_random, create_round_spehere
 from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
 from utils.mesh_plot_util import write_ply
 from utils.dataset import ShapeNet
-import random, os, json, sys
+import random, os, sys
 import torch
 import torch.optim as optim
-import scipy 
 import numpy as np
 import pandas as pd
 
@@ -43,7 +39,6 @@ parser.add_argument('--tau', type=float, default=0.1)
 
 parser.add_argument('--device', type=int, default=0, help='GPU device')
 
-# parser.add_argument('--manualSeed', type=int, default=6185)
 args = parser.parse_args()
 cuda = torch.device('cuda:{}'.format(args.device))
 
@@ -55,8 +50,7 @@ if not os.path.exists(dir_name):
     os.mkdir(dir_name)
 
 logname = os.path.join(dir_name, 'log.txt')
-# blue = lambda x: '\033[94m' + x + '\033[0m'
-# print("Random Seed: ", args.manualSeed)
+
 
 
 dataset = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=True, class_choice='chair')
@@ -71,14 +65,9 @@ print('testing set', len(dataset_val.datapath))
 len_dataset = len(dataset)
 
 # Create Round Spehere - TODO take ASIS change
-name = 'sphere' + str(args.num_vertices) + '.mat'
-mesh = scipy.io.loadmat('./data/' + name)
-faces = np.array(mesh['f'])
-faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor).to(cuda)
-vertices_sphere = np.array(mesh['v'])
-vertices_sphere = (torch.cuda.FloatTensor(vertices_sphere)).transpose(0, 1).contiguous()
-vertices_sphere = vertices_sphere.contiguous().unsqueeze(0).to(cuda)
-edge_cuda = get_edges(faces)
+edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_vertices, cuda = 'cuda:0')
+
+
 
 ## Load Models ##
 # Img encoder 
@@ -118,7 +107,7 @@ with open(logname, 'a') as f:  # open and append
 
 distChamfer = dist_chamfer_3D.chamfer_3DDist()
 
-# VALIDATION
+
 subnet1.eval()
 subnet2.eval()
 encoder.eval()
@@ -152,10 +141,7 @@ for i, data in enumerate(dataloader_val, 0):
         triangles_c1 = faces_cuda_bn[0].cpu().data.numpy()
         triangles_c2 = faces_cuda_bn2[0].cpu().data.numpy()
         triangles_c3 = faces_cuda_bn2[0].cpu().data.numpy()
-        
-        # if not os.path.exists(dir_name + "/" +):
-        #     os.mkdir(opt.model[:-4])
-        #     print('created dir', opt.model[:-4])
+
         dir_category = dir_name + "/" + str(cat)
         if not os.path.exists(dir_category):
             os.mkdir(dir_category)
