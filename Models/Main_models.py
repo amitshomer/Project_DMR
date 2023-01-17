@@ -98,7 +98,7 @@ class Base_Img_to_Mesh(nn.Module):
 
 
     def forward(self, img, points, epoch):
-        # As same as the original repo, until epoch 120 point 2 point
+        # As same logic as the original repo, until epoch 120 point 2 point
         # From that stage - image 2 point
         if epoch <= 120: # points
             x = self.point_cloud_encoder(points)
@@ -174,11 +174,10 @@ class Refinement(nn.Module):
         self.conv_layer2 = Conv_layer(bottleneck_size, bottleneck_size//2, 1)
         self.conv_layer3 = Conv_layer(bottleneck_size//2, bottleneck_size//4, 1)
         self.conv4 = torch.nn.Conv1d(bottleneck_size//4, 2, 1)
-
         self.th = nn.Tanh()
 
     def forward(self,points, img_featrue, faces_cuda_bn ):
-        # Boundery 
+        # Vector calcutaion - was not implemented   
         pointsRec2_boundary, selected_pair_all, selected_pair_all_len = get_boundary_points_bn(faces_cuda_bn, points, self.cuda)
         vec1 = (pointsRec2_boundary[:, :, 1] - pointsRec2_boundary[:, :, 0])
         vec2 = (pointsRec2_boundary[:, :, 2] - pointsRec2_boundary[:, :, 0])
@@ -186,6 +185,7 @@ class Refinement(nn.Module):
         vec2 = vec2 / (torch.norm((vec2 + 1e-6), dim=2)).unsqueeze(2)
         vec1 = vec1.transpose(2,1).detach()
         vec2 = vec2.transpose(2,1).detach()
+        ###
         
         if pointsRec2_boundary.shape[1] != 0:
             batch_size= img_featrue.size(0)
