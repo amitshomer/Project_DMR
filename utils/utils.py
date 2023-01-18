@@ -14,6 +14,13 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
+def load_weights(model, path, cuda="'cuda:0"):
+    model_dict = model.state_dict()
+    pretrained_dict = {k: v for k, v in torch.load(path).items() if (k in model_dict)}
+    model_dict.update(pretrained_dict)
+    model.load_state_dict(model_dict)
+    model.to(cuda)
+    return model
 
 class AverageValueMeter:
     def __init__(self):

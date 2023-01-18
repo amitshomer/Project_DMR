@@ -165,14 +165,19 @@ class Subnet1(nn.Module):
         return pointsRec, pointsRec_samples, out_error_estimator, random_choice, faces_cuda_bn
 
 class Refinement(nn.Module):
+    " partially implemnted due lack of time- this was the last model"
     def __init__(self, cuda, bottleneck_size = 1024):
         self.bottleneck_size = bottleneck_size +3
         self.cuda = cuda
         super(Refinement, self).__init__()
-        self.conv_layer1 = Conv_layer(bottleneck_size, bottleneck_size, 1)
-        self.conv_layer2 = Conv_layer(bottleneck_size, bottleneck_size//2, 1)
-        self.conv_layer3 = Conv_layer(bottleneck_size//2, bottleneck_size//4, 1)
-        self.conv4 = torch.nn.Conv1d(bottleneck_size//4, 2, 1)
+        self.conv1 = torch.nn.Conv1d(self.bottleneck_size, self.bottleneck_size, 1)
+        self.conv2 = torch.nn.Conv1d(self.bottleneck_size, self.bottleneck_size//2, 1)
+        self.conv3 = torch.nn.Conv1d(self.bottleneck_size//2, self.bottleneck_size//4, 1)
+        self.conv4 = torch.nn.Conv1d(self.bottleneck_size//4, 2, 1)
+
+        self.bn1 = torch.nn.BatchNorm1d(self.bottleneck_size)
+        self.bn2 = torch.nn.BatchNorm1d(self.bottleneck_size//2)
+        self.bn3 = torch.nn.BatchNorm1d(self.bottleneck_size//4)
         self.th = nn.Tanh()
 
     def forward(self,points, img_featrue, faces_cuda_bn ):
@@ -193,9 +198,9 @@ class Refinement(nn.Module):
                 points= points.permute(0,2,1).contiguous()
             img_featrue1 = img_featrue.unsqueeze(2).expand(img_featrue.size(0), img_featrue.size(1), points.size(2)).contiguous()
             x = torch.cat((points, img_featrue1), 1).contiguous()
-            x = self.conv_layer1(x)
-            x = self.conv_layer2(x)
-            x = self.conv_layer3(x)
+            x = F.relu(self.bn1(self.conv1(x)))
+            x = F.relu(self.bn2(self.conv2(x)))
+            x = F.relu(self.bn3(self.conv3(x)))
             x = self.th(self.conv4(x))
             out = x[:, 0].unsqueeze(1) * vec1 + x[:, 1].unsqueeze(1) * vec2 + points
             out = out.permute(0,2,1).contiguous()

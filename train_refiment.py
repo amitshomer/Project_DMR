@@ -3,7 +3,7 @@ import argparse
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 , DeformNet, Refinement
-from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere, final_refined_mesh, samples_random
+from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere, final_refined_mesh, samples_random, load_weights
 from utils.dataset import ShapeNet
 import random, os, json, sys
 import torch
@@ -27,7 +27,7 @@ parser.add_argument('--num_vertices', type=int, default=2562, help='number of ve
 parser.add_argument('--folder_path_subnet1', type=str, default='./log/subnet1/', help='model path from the pretrained model')
 parser.add_argument('--folder_path_subnet2', type=str, default='./log/subnet2/', help='model path from the pretrained model')
 parser.add_argument('--tau', type=float, default=0.1)
-parser.add_argument('--device', type=int, default=1, help='GPU device')
+parser.add_argument('--device', type=int, default=0, help='GPU device')
 
 args = parser.parse_args()
 cuda = torch.device('cuda:{}'.format(args.device))
@@ -56,27 +56,15 @@ edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_v
 ## Load Models ##
 # Img encoder 
 encoder = Base_network().img_endoer
-model_dict = encoder.state_dict()
-pretrained_dict = {k: v for k, v in torch.load(args.folder_path_subnet1+'/encoder.pth').items() if (k in model_dict)}
-model_dict.update(pretrained_dict)
-encoder.load_state_dict(model_dict)
-encoder.to(cuda)
+encoder = load_weights(encoder,args.folder_path_subnet1+'/encoder.pth', cuda )
 
 # Subnet1
 subnet1 = Subnet1(cuda=cuda)
-model_dict = subnet1.state_dict()
-pretrained_dict = {k: v for k, v in torch.load(args.folder_path_subnet1+'/subnet1.pth').items() if (k in model_dict)}
-model_dict.update(pretrained_dict)
-subnet1.load_state_dict(model_dict)
-subnet1.to(cuda)
+subnet1 = load_weights(subnet1, args.folder_path_subnet1+'/subnet1.pth', cuda )
 
 # Subnet2
 subnet2 = Subnet1(cuda=cuda)
-model_dict = subnet2.state_dict()
-pretrained_dict = {k: v for k, v in torch.load(args.folder_path_subnet2+'/subnet2.pth').items() if (k in model_dict)}
-model_dict.update(pretrained_dict)
-subnet2.load_state_dict(model_dict)
-subnet2.to(cuda)
+subnet2 = load_weights(subnet2, args.folder_path_subnet2+'/subnet2.pth', cuda )
 
 # Refine
 refinement = Refinement(cuda=cuda) # Deform and Refine build the same

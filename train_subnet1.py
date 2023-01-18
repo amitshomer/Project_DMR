@@ -3,8 +3,8 @@
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 
-from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere
-from utils.loss import get_edge_loss_stage1, smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss_stage1, get_normal_loss # TODO - change names 
+from utils.utils import weights_init, AverageValueMeter, get_edges, create_round_spehere, load_weights
+from utils.loss import get_edge_loss_stage1, smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss_stage1, get_normal_loss 
 import argparse
 from utils.dataset import ShapeNet
 import os
@@ -53,20 +53,12 @@ parameters = smoothness_loss_parameters(faces)
 
 # Base model - load with weights
 encoder = Base_network()
-model_dict = encoder.state_dict()
-pretrained_dict = {k: v for k, v in torch.load(args.model_path).items() if (k in model_dict)}
-model_dict.update(pretrained_dict)
-encoder.load_state_dict(model_dict)
+encoder = load_weights(encoder, args.model_path )
 encoder = encoder.img_endoer
-encoder.cuda()
 
 # Subnet1
 subnet1 = Subnet1(cuda= cuda)
-model_dict = subnet1.state_dict()
-pretrained_dict = {k: v for k, v in torch.load(args.model_path).items() if (k in model_dict)}
-model_dict.update(pretrained_dict)
-subnet1.load_state_dict(model_dict)
-subnet1.cuda()
+subnet1 = load_weights(subnet1, args.model_path )
 
 # optimizer load
 optimizer = optim.Adam([
