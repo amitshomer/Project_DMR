@@ -3,22 +3,122 @@ import sys
 import ChamferDistancePytorch.chamfer3D.dist_chamfer_3D as  dist_chamfer_3D
 from Models.Main_models import Base_Img_to_Mesh as Base_network
 from Models.Main_models import Subnet1 , DeformNet, Refinement
-
+import argparse
 from utils.utils import weights_init, AverageValueMeter, get_edges, prune, final_refined_mesh, samples_random, create_round_spehere
 from utils.loss import smoothness_loss_parameters, mse_loss, get_edge_loss, get_smoothness_loss, get_normal_loss # TODO - change names 
-from utils.mesh_plot_util import write_ply
 from utils.dataset import ShapeNet
-import random, os, sys
+import os, sys
 import torch
 import torch.optim as optim
 import numpy as np
 import pandas as pd
 
 torch.cuda.empty_cache()
-random.seed(6185)
-torch.manual_seed(6185)
+
+def write_ply(filename, points=None, faces = None, mesh=None, as_text=False, normal=False, text=False, color = False):
+    """
+    ## The function of plot mesh was no implemented 
+    Parameters
+    ----------
+    filename: str
+        The created file will be named with this
+    points: ndarray
+    mesh: ndarray
+    as_text: boolean
+        Set the write mode of the file. Default: binary
+    Returns
+    -------
+    boolean
+        True if no problems
+    """
+    if not filename.endswith('ply'):
+        filename += '.ply'
+
+    # open in text mode to write the header
+    with open(filename, 'w') as ply:
+        header = ['ply']
+
+        if as_text:
+            header.append('format ascii 1.0')
+        else:
+            header.append('format binary_' + sys.byteorder + '_endian 1.0')
+
+        if points is not None:
+            header.extend(describe_element('vertex', points, normal, text, color))
+        if mesh is not None:
+            mesh = mesh.copy()
+            mesh.insert(loc=0, column="n_points", value=3)
+            mesh["n_points"] = mesh["n_points"].astype("u1")
+            header.extend(describe_element('face', mesh, normal, text, color))
+        if faces is not None:
+            header.extend(describe_element('face', faces, text))
+        header.append('end_header')
+
+        for line in header:
+            ply.write("%s\n" % line)
+
+    if as_text:
+        if points is not None:
+            # print("write points")
+            points.to_csv(filename, sep=" ", index=False, header=False, mode='a',
+                          encoding='ascii')
+            # print("end points")
+        
+        if faces is not None:
+            faces.to_csv(filename, sep=" ", index=False, header=False, mode='a',
+                          encoding='ascii')
+        
+        if mesh is not None:
+            mesh.to_csv(filename, sep=" ", index=False, header=False, mode='a',
+                        encoding='ascii')
+
+    else:
+        # open in binary/append to use tofile
+        with open(filename, 'ab') as ply:
+            if points is not None:
+                points.to_records(index=False).tofile(ply)
+            if faces is not None:
+                faces.to_records(index=False).tofile(ply)
+            if mesh is not None:
+                mesh.to_records(index=False).tofile(ply)
+    return True
+
+def describe_element(name, df, normal=False, text = False, color=False):
+    """ 
+    ## The function of plot mesh was no implemented 
+    Takes the columns of the dataframe and builds a ply-like description
+    Parameters
+    ----------
+    name: str
+    df: pandas DataFrame
+    Returns
+    -------
+    element: list[str]
+    """
+    property_formats = {'f': 'float', 'u': 'uchar', 'i': 'int'}
+    element = ['element ' + name + ' ' + str(len(df))]
+
+    if name == 'face':
+        element.append("property list uchar int vertex_indices")
+
+    else:
+        element.append('property float x')
+        element.append('property float y')
+        element.append('property float z')
+        if text:
+            element.append('property float u')
+            element.append('property float v')
+        if normal:
+            element.append('property float nx')
+            element.append('property float ny')
+            element.append('property float nz')
+        if color:
+            element.append('property uchar red')
+            element.append('property uchar green')
+            element.append('property uchar blue')
 
 
+    return element
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, default=1, help=' batch size')
@@ -33,10 +133,7 @@ parser.add_argument('--num_vertices', type=int, default=2562, help='number of ve
 parser.add_argument('--folder_path_subnet1', type=str, default='./log/subnet1/', help='model path from the pretrained model')
 parser.add_argument('--folder_path_subnet2', type=str, default='./log/subnet2/', help='model path from the pretrained model')
 parser.add_argument('--folder_refinement', type=str, default='./log/refinement/', help='model path from the pretrained model')
-
-
 parser.add_argument('--tau', type=float, default=0.1)
-
 parser.add_argument('--device', type=int, default=0, help='GPU device')
 
 args = parser.parse_args()
@@ -51,8 +148,6 @@ if not os.path.exists(dir_name):
 
 logname = os.path.join(dir_name, 'log.txt')
 
-
-
 dataset = ShapeNet(npoints=args.num_points, SVR=True, normal=True, train=True, class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
                                          shuffle=True, num_workers=int(args.workers))
@@ -64,9 +159,7 @@ print('training set', len(dataset.datapath))
 print('testing set', len(dataset_val.datapath))
 len_dataset = len(dataset)
 
-# Create Round Spehere - TODO take ASIS change
 edge_cuda, vertices_sphere, faces_cuda, faces =  create_round_spehere(args.num_vertices, cuda = 'cuda:0')
-
 
 
 ## Load Models ##
@@ -136,7 +229,6 @@ for i, data in enumerate(dataloader_val, 0):
         #Refiment 
         pointsRec3_boundary, displace_loss, selected_pair_all, selected_pair_all_len = refinement(points = pointsRec2, img_featrue = feature_img, faces_cuda_bn = faces_cuda_bn2 )
         pointsRec3 = final_refined_mesh(selected_pair_all, selected_pair_all_len, pointsRec3_boundary, pointsRec2, batch_size = img.shape[0])
-        # pointsRec3_samples, _ = samples_random(faces_cuda_bn, pointsRec3, args.num_points, device = cuda)
 
         triangles_c1 = faces_cuda_bn[0].cpu().data.numpy()
         triangles_c2 = faces_cuda_bn2[0].cpu().data.numpy()

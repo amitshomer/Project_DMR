@@ -366,10 +366,6 @@ def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
     for edge_bn in torch.arange(0, faces_cuda_bn.shape[0]):
         faces_each = faces_cuda_bn[edge_bn]
         selected_pair, boundary_point, _ = get_boundary(faces_each)
-        #selected_pair_sa, boundary_point_sa, aa_sa = utils_sa.get_boundary(faces_each.clone())
-        #assert ((selected_pair != selected_pair_sa).sum()==0)
-        #assert ((boundary_point != boundary_point_sa).sum()==0)
-        #assert ((aa != aa_sa).sum()==0)
         selected_pair_all.append(selected_pair)
         selected_pair_all_len.append(len(selected_pair))
         boundary_points_all.append(boundary_point)
@@ -401,6 +397,7 @@ def get_boundary_points_bn(faces_cuda_bn, pointsRec_refined, device='cuda:0'):
     return pointsRec_refined_boundary, selected_pair_all, selected_pair_all_len
 
 def create_round_spehere(num_vertices, cuda = 'cuda:0'):
+    # Take ASIS - To change if have time
     name = 'sphere' + str(num_vertices) + '.mat'
     mesh = scipy.io.loadmat('./data/' + name)
     faces = np.array(mesh['f'])
@@ -419,11 +416,9 @@ def final_refined_mesh(selected_pair_all, selected_pair_all_len, pointsRec3_boun
             index_bp = selected_pair_all[ibatch][:, 0][:length]
             prb_final = pointsRec3_boundary[ibatch][:length]
 
-            #print(prb_final)
 
             pr = pointsRec2[ibatch]
             index_bp = index_bp.view(index_bp.shape[0], -1).expand([index_bp.shape[0], 3])
-            #pr_final = pr.scatter(dim=0, index=index_bp, source=prb_final)
             pr_final = pr.scatter(0, index_bp, prb_final)
 
             pointsRec3_set.append(pr_final)

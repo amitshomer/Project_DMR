@@ -1,7 +1,5 @@
-from __future__ import print_function
 import torch
 import torch.nn as nn
-import torch.nn.parallel
 import torch.utils.data
 import torch.nn.functional as F
 import Models.resnet as resnet
@@ -104,6 +102,7 @@ class Base_Img_to_Mesh(nn.Module):
             x = self.point_cloud_encoder(points)
         else: # image
             x = self.img_endoer(img)
+        
         #TODO - check the rand grid
         rand_grid = torch.cuda.FloatTensor(x.size(0), 3, self.num_points)
         rand_grid.data.normal_(0, 1)
@@ -186,7 +185,7 @@ class Refinement(nn.Module):
         vec1 = vec1.transpose(2,1).detach()
         vec2 = vec2.transpose(2,1).detach()
         ###
-        
+
         if pointsRec2_boundary.shape[1] != 0:
             batch_size= img_featrue.size(0)
             points = pointsRec2_boundary[:, :, 0]
